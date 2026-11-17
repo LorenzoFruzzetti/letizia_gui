@@ -61,7 +61,7 @@ under ``output_root``, so an interrupted batch can be restarted without redoing
 finished recordings; the summary CSV is appended to rather than overwritten.
 Pass ``--no-skip-existing`` to force a full recompute.
 
-Two modes, mirroring ``run_intermingle_rs.py``:
+Two modes:
     * debug = True  -- fast smoke test. Loads only ``debug_max_frames`` frames per
       channel per recording into RAM and runs ``run_profile``, optionally capping
       the number of recordings used (``max_recordings``). Keeps ``dff_stack`` so it
@@ -85,14 +85,14 @@ in the manifest, full streaming, the per-recording ROI sets in roi_sets\\rebuilt
 serial execution, per-pixel dumps into pixel_data\\), so with no flags at all
 this does the whole batch:
 
-    conda run -n letizia python run_botox_batch.py                  # editor mode, uses RUN_CONFIG
-    conda run -n letizia python run_botox_batch.py --workers 1      # explicit reliable default
-    conda run -n letizia python run_botox_batch.py --workers 2      # experimental on Windows
-    conda run -n letizia python run_botox_batch.py --select 260611/R1 260611/R2
-    conda run -n letizia python run_botox_batch.py --debug          # fast smoke test
-    conda run -n letizia python run_botox_batch.py --no-skip-existing   # recompute everything
-    conda run -n letizia python run_botox_batch.py --no-save-data       # ROI means only, no pixel volumes
-    conda run -n letizia python run_botox_batch.py --merge-recordings   # one concatenated trial per animal
+    conda run -n wfci_gui python extract_cohort.py                  # editor mode, uses RUN_CONFIG
+    conda run -n wfci_gui python extract_cohort.py --workers 1      # explicit reliable default
+    conda run -n wfci_gui python extract_cohort.py --workers 2      # experimental on Windows
+    conda run -n wfci_gui python extract_cohort.py --select 260611/R1 260611/R2
+    conda run -n wfci_gui python extract_cohort.py --debug          # fast smoke test
+    conda run -n wfci_gui python extract_cohort.py --no-skip-existing   # recompute everything
+    conda run -n wfci_gui python extract_cohort.py --no-save-data       # ROI means only, no pixel volumes
+    conda run -n wfci_gui python extract_cohort.py --merge-recordings   # one concatenated trial per animal
 
 Edit ``RUN_CONFIG`` and run -- no CLI flags needed. Errors are left to surface.
 """
@@ -136,10 +136,10 @@ from wfci.io import (
 )
 from wfci.streaming import channel_choice_meta, choose_block_channels, roi_union_level_mask
 
-# Reuse the single-folder helpers instead of duplicating them -- run_intermingle_rs
-# guards its own run behind ``if __name__ == "__main__"``, so importing is inert.
+# Reuse the single-folder helpers instead of duplicating them; importing
+# recording_helpers is inert (it has no ``__main__`` block).
 from roi_editor import load_roi_set
-from run_intermingle_rs import (
+from recording_helpers import (
     _load_limited_trial,
     _save_overlay,
     _save_traces,

@@ -1,4 +1,4 @@
-"""Build the run_botox_batch manifest from a cohort's recordings table.
+"""Build the extract_cohort manifest from a cohort's recordings table.
 
 Shared by ``scan_cohort.py`` (which writes it) and the step-1 status check (which
 compares it with the manifest on disk), so "the manifest matches the tables" means
@@ -27,7 +27,7 @@ MANIFEST_FIELDS = [
     "recording_paths",
 ]
 # Pipeline placeholders every existing scanner writes. Bregma is overridden by each
-# recording's own ROI set (run_botox_batch: the file's Bregma wins, CLAUDE.md 9.4).
+# recording's own ROI set (extract_cohort: the file's Bregma wins, CLAUDE.md 9.4).
 MANIFEST_DEFAULTS = {
     "default_bregma_row": 121,
     "default_bregma_col": 134,

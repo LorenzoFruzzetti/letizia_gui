@@ -2,7 +2,7 @@
 
 gui_spec.md section 6, "Passing values":
   * argparse scripts get their existing CLI flags;
-  * environment-variable scripts (``PV_STATS_*``) get those variables;
+  * environment-variable scripts (``CONNECTIVITY_STATS_*``) get those variables;
   * flat scripts run through ``run_with_overrides.py <script> --set name=value``.
 
 Every job has three kinds of value:
@@ -126,14 +126,14 @@ def _stats_fixed(cohort: Cohort, tables, variant) -> dict[str, Any]:
     # The script knows each cohort by a key (2026/2024/2023/botox_2022). A new cohort has
     # none: adding one is an edit of the script, which needs approval (spec D8).
     stats_cohort = choice.get("stats_cohort") or not_set(
-        "analysis_a.stats_cohort; this cohort has no entry in test_pv_detrended_stats.py "
+        "analysis_a.stats_cohort; this cohort has no entry in connectivity_stats.py "
         "and adding one needs an approved edit")
     return {
-        "PV_STATS_COHORT": str(stats_cohort),
-        "PV_STATS_VARIANT": variant,
-        "PV_STATS_FOCUS": choice.get("focus", "SSp"),
-        "PV_STATS_TIME_AXIS": "timepoint",
-        "PV_STATS_OUTPUT_ROOT": str(cohort.path_of("stats_root")),
+        "CONNECTIVITY_STATS_COHORT": str(stats_cohort),
+        "CONNECTIVITY_STATS_VARIANT": variant,
+        "CONNECTIVITY_STATS_FOCUS": choice.get("focus", "SSp"),
+        "CONNECTIVITY_STATS_TIME_AXIS": "timepoint",
+        "CONNECTIVITY_STATS_OUTPUT_ROOT": str(cohort.path_of("stats_root")),
         "timepoints": ordered,
         "exclude_animals": [a for a in all_animals if animals and a not in animals],
         "exclude_recordings": sorted(cohort.excluded_keys()),
@@ -159,13 +159,13 @@ JOBS: dict[str, JobSpec] = {spec.key: spec for spec in (
             fixed=lambda c, t, v: {"roi_set_dir": "<copy of this cohort's new reviewed sets>",
                                    "out_dir": str(c.path_of("roi_set_dir"))}),
     JobSpec("preflight", "rois", "ROI pre-flight", "roi_preflight.py", fixed=_cohort_arg),
-    JobSpec("extract", "extract", "Extraction", "run_botox_batch.py", fixed=_extract_fixed),
+    JobSpec("extract", "extract", "Extraction", "extract_cohort.py", fixed=_extract_fixed),
     JobSpec("qc", "qc", "Quality control table", "qc_cohort.py", fixed=_cohort_arg),
     JobSpec("cache_median", "caches", "Median dF/F cache", "cache_median_dff.py",
             fixed=lambda c, t, v: {"pixel_root": str(c.path_of("pixel_root")),
                                    "sampling_rate_hz": _acq(c, "sampling_rate_hz"),
                                    "window_s": float(v) if v is not None else cache_windows(c)[0]}),
-    JobSpec("cache_blpedestal", "caches", "BL-pedestal cache", "cache_median_dff_bl_offset.py",
+    JobSpec("cache_blpedestal", "caches", "BL-pedestal cache", "cache_median_dff_baseline_pedestal.py",
             fixed=lambda c, t, v: {"pixel_root": str(c.path_of("pixel_root")),
                                    "design_csv": str(design_path(c)),
                                    "sampling_rate_hz": _acq(c, "sampling_rate_hz"),
@@ -175,7 +175,7 @@ JOBS: dict[str, JobSpec] = {spec.key: spec for spec in (
     JobSpec("design", "design", "Experimental design", "build_cohort_design.py", fixed=_cohort_arg),
     JobSpec("connectivity", "analysis_a", "Connectivity", "roi_pixel_connectivity.py",
             fixed=_connectivity_fixed, defaults=lambda c, t, v: {"groups_csv": "none"}),
-    JobSpec("stats", "analysis_a", "Connectivity statistics", "test_pv_detrended_stats.py",
+    JobSpec("stats", "analysis_a", "Connectivity statistics", "connectivity_stats.py",
             flat=True, fixed=_stats_fixed),
 )}
 

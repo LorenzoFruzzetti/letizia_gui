@@ -12,13 +12,13 @@ Writes:
   * ``recordings.csv`` (cohort table): one row per recording folder, runnable or not, with a
     ``status`` (ok / empty / not_a_recording / frame_gap / wrong_count / parity_break). The
     user's ``use`` and ``channel_order`` edits of an earlier scan are kept;
-  * the manifest (run_botox_batch layout; logic/manifest.py), paths through the junction
+  * the manifest (extract_cohort layout; logic/manifest.py), paths through the junction
     view when ``manifest_paths: link``;
   * the junction view ``<link_root>\\<yymmdd>\\<animal>\\<t#>`` -> raw folder (Windows only):
     the ROI editor keys a page by the last three path parts (CLAUDE.md 9.51).
 
 Run it:
-    conda run --no-capture-output -n letizia python -u scan_cohort.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u scan_cohort.py --cohort cohorts\\botox_2023.yaml
     ... --no-walk     rebuild manifest + junctions from recordings.csv only (no raw disk read)
 
 Errors surface (no try/except): an unplugged disk or an unknown folder name stops the scan.

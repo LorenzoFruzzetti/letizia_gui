@@ -1,6 +1,6 @@
 """Seed-based connectivity: correlate every ROI with every pixel of the dumps.
 
-run_botox_batch.py reduces each frame to the 22 ROI box means and computes the
+extract_cohort.py reduces each frame to the 22 ROI box means and computes the
 22x22 Pearson matrix `R` between them (wfci.roi.functional_connectivity). This
 script computes the same correlation, with the same seeds, against EVERY pixel of
 the saved crop instead of against the other 21 boxes:
@@ -14,7 +14,7 @@ Seeds are the nanmean of the dumped pixels inside each box of the recording's
 OWN `roi_sets/rebuilt/<day>_<animal>_<t#>.yaml` (the one named in its dump meta),
 so they are the traces `R` was computed from, to float16 storage error
 (CLAUDE.md 9.19). The ROI x ROI matrix recomputed from them is saved as well
-(`R_roi`) so it can be checked against run_botox_batch's `R_mean`.
+(`R_roi`) so it can be checked against extract_cohort's `R_mean`.
 
 Averaging. Correlations are averaged as Fisher z (arctanh), then converted back
 with tanh: recordings -> one map per animal-day (unit), units -> one map per
@@ -24,7 +24,7 @@ same position relative to Bregma in every animal, and maps can be averaged pixel
 by pixel without any registration.
 
 Signal. `volume_file` picks which dumped/cached per-pixel volume is correlated:
-`pixels_dff_full.npy` (default) is the mean-baseline dF/F that run_botox_batch's
+`pixels_dff_full.npy` (default) is the mean-baseline dF/F that extract_cohort's
 `R` is computed from. `pixels_median_dff_<N>s_full.npy` (cache_median_dff.py) is
 the running-median dF/F the epileptic detectors use. The output folder is named
 after the volume so two signals never overwrite each other.
@@ -70,7 +70,7 @@ Outputs (under `output_root/<volume stem>/`):
     recording_summary.csv                   one row per recording
     cortex_mean_gcamp_traces.csv            cortex-mean GCaMP of every recording, one row per frame
 
-Examples (in the letizia environment):
+Examples (in the wfci_gui environment):
     python roi_pixel_connectivity.py
     python roi_pixel_connectivity.py --recording-limit 5
     python roi_pixel_connectivity.py --workers 8
@@ -99,7 +99,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 
-from epileptic_by_area_animal_day_pixels import crop_slices, recording_roi_set, roi_output_suffix
+from pixel_helpers import crop_slices, recording_roi_set, roi_output_suffix
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -266,7 +266,7 @@ def recording_boxes(meta: dict[str, Any],
     Only the dump's own set must list the dump's `roi_labels`: an override from
     pixel_roi_editor.py may add, drop or rename boxes.
     """
-    atlas_path, atlas = recording_roi_set(meta, roi_set_dir)
+    atlas_path, atlas = recording_roi_set(meta, roi_set_dir, base_dir=REPO_ROOT)
     if roi_set_dir is None and list(atlas["boxes"]) != list(meta["roi_labels"]):
         raise ValueError(f"Atlas box order differs from the dump's roi_labels: {atlas_path}")
     return atlas_path, atlas["boxes"]

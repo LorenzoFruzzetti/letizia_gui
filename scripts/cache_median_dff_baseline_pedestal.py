@@ -36,9 +36,9 @@ Output, next to each dump (window and tag in the name, so it never mixes):
     pixels_median_dff_<window>s_blpedestal_full.npy   float16, (n_time, rows, cols)
     pixels_median_dff_<window>s_blpedestal_meta.json  written LAST = done-marker
 
-Example (letizia env):
-    python cache_median_dff_bl_offset.py
-    python cache_median_dff_bl_offset.py --workers 1 --recording-limit 2
+Example (wfci_gui env):
+    python cache_median_dff_baseline_pedestal.py
+    python cache_median_dff_baseline_pedestal.py --workers 1 --recording-limit 2
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ import pandas as pd
 from scipy.ndimage import gaussian_filter
 
 from cache_median_dff import median_dff_volume
-from epileptic_by_area_animal_day_pixels import crop_slices, median_window_frames
+from pixel_helpers import crop_slices, median_window_frames
 from roi_pixel_connectivity import read_meta, recording_boxes
 
 REPO_ROOT = Path(__file__).resolve().parent

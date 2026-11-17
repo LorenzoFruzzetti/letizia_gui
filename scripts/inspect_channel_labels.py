@@ -25,7 +25,7 @@ Keys:
     c                toggle shared colour limits for the two channels (compare levels)
     q                close
 
-Run (in the letizia environment):
+Run (in the wfci_gui environment):
     python inspect_channel_labels.py
     python inspect_channel_labels.py --session 230726 --unit PV23_BB0
 
@@ -41,7 +41,7 @@ from typing import Any
 
 import matplotlib
 
-matplotlib.use("QtAgg")  # interactive window; pyside6 is in the letizia env
+matplotlib.use("QtAgg")  # interactive window; pyside6 is in the wfci_gui env
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.ndimage import gaussian_filter

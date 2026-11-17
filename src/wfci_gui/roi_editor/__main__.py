@@ -124,11 +124,11 @@ def main() -> None:
     from .window import EditorWindow
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv[:1])
-    app.setOrganizationName("letizia")
+    app.setOrganizationName("wfci_gui")
     app.setApplicationName("wfci_roi_editor")
     config_dir = Path(args.config_dir) if args.config_dir else default_config_dir()
     install_excepthook(config_dir)
-    window = EditorWindow(QtCore.QSettings("letizia", "wfci_roi_editor"), config_dir)
+    window = EditorWindow(QtCore.QSettings("wfci_gui", "wfci_roi_editor"), config_dir)
     open_at_start(window, args)
     window.show()
     sys.exit(app.exec())

@@ -1,15 +1,15 @@
 """Cache the per-pixel median-baseline dF/F of every pixel dump, once.
 
-For every `pixel_data/<date>_<animal>/<t#>/` written by run_botox_batch.py
+For every `pixel_data/<date>_<animal>/<t#>/` written by extract_cohort.py
 --save-data, computes over the WHOLE saved crop
 
     dF/F(t, p) = (F(t, p) / Fbar(t, p)) / (R(t, p) / Rbar(t, p)) - 1
 
 where Fbar/Rbar are each pixel's centred running median over `window_s`
 seconds (`min_periods=1` at the ends). This is exactly the per-pixel quantity
-epileptic_by_area_animal_day_pixels.py (`--signal-mode median_dff`) computes
-before averaging inside a box: averaging the cached volume over a box reproduces
-`median_dff_roi_trace` bit for bit (checked on 260611/PV5/t1). It is a ratio,
+the pixel event detector (`--signal-mode median_dff`) computes before averaging
+inside a box: averaging the cached volume over a box reproduces its median-dF/F
+ROI trace bit for bit (checked on 260611/PV5/t1). It is a ratio,
 not a percentage.
 
 It depends only on F, R and the baseline window, never on detection
@@ -30,7 +30,7 @@ Interruption is safe: the volume is written to a temporary name and renamed,
 and the meta JSON is written after it, so a recording without its JSON is
 simply recomputed on the next run.
 
-Examples (in the letizia environment):
+Examples (in the wfci_gui environment):
     python cache_median_dff.py
     python cache_median_dff.py --workers 1 --recording-limit 2
     python cache_median_dff.py --dtype float32 --window-s 30
@@ -53,7 +53,7 @@ from typing import Any
 
 import numpy as np
 
-from epileptic_by_area_animal_day_pixels import median_window_frames, running_median
+from pixel_helpers import median_window_frames, running_median
 
 REPO_ROOT = Path(__file__).resolve().parent
 

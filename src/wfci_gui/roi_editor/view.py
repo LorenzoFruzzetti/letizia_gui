@@ -5,7 +5,7 @@ Each draws the same page model: the image, the boxes (``pg.RectROI``, whole-pixe
 four corner handles, no rotation, as in the old editor), the box labels, Bregma (a
 draggable target), Lambda (draggable), the Bregma-Lambda axis and the channel rectangle
 (``pg.ROI``, rotation locked to the axis, scale handles for length and both widths, as
-in experiments/channel_rectangle_viewer.py).
+in scripts/channel_rectangle_viewer.py).
 
 A panel never edits anything: every user gesture is passed to ``events`` (the
 controller), which changes the model and asks both panels to redraw. ``events.syncing``

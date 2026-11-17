@@ -131,11 +131,11 @@ def test_conda_discovery_order(tmp_path):
 
 def test_command_building():
     command = python_command(Path("C:/c/conda.bat"), ["script.py", "--x", "1"])
-    assert command[1:7] == ["run", "--no-capture-output", "-n", "letizia", "python", "-u"]
+    assert command[1:7] == ["run", "--no-capture-output", "-n", "wfci_gui", "python", "-u"]
     assert command[7:] == ["script.py", "--x", "1"]
-    environment = job_environment(Path("C:/repo"), {"PV_STATS_COHORT": "2023"}, base={})
+    environment = job_environment(Path("C:/repo"), {"CONNECTIVITY_STATS_COHORT": "2023"}, base={})
     assert environment["PYTHONPATH"] == f"{Path('C:/repo/src')};{Path('C:/repo/scripts')}"
-    assert environment["PV_STATS_COHORT"] == "2023"
+    assert environment["CONNECTIVITY_STATS_COHORT"] == "2023"
     with pytest.raises(ValueError, match="cmd.exe"):
         check_arguments(["--label", "dF/F (%)"])
 

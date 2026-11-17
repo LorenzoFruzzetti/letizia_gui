@@ -66,9 +66,9 @@ missed a rescale; 260708_PV5 and 260716_PV5 t4/t5 sat 2 Bregma rows off).  Each 
 is rebuilt from the Bregma and Lambda held by the majority of its own recordings.
 
 Run it:
-    conda run --no-capture-output -n letizia python rebuild_roi_sets.py
-    conda run --no-capture-output -n letizia python rebuild_roi_sets.py --out-dir roi_sets/rebuilt
-    conda run --no-capture-output -n letizia python rebuild_roi_sets.py --dry-run
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --out-dir roi_sets/rebuilt
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --dry-run
 """
 from __future__ import annotations
 
@@ -107,7 +107,7 @@ RUN_CONFIG: dict[str, Any] = {
     # The constellation every set is regenerated from.
     "baseline": r"atlas/cortex22_roi_set.yaml",
     # Where the regenerated sets are written. Same <key>.yaml names as the input, so
-    # run_intermingle_rs.py / run_botox_batch.py can be pointed here with --roi-set-dir.
+    # extract_cohort.py can be pointed here with --roi-set-dir.
     "out_dir": r"roi_sets/rebuilt",
     # Bregma->Lambda distance the BASELINE boxes are treated as being drawn at.
     # 55 = RUN_CONFIG["lambda_offset"] in batch_roi_select.py, the value the existing
@@ -426,7 +426,7 @@ def main() -> None:
     else:
         print(f"\nWrote {len(written)} files to {out_dir}")
         print(f"\nUse them:\n"
-              f'  conda run -n letizia python run_botox_batch.py --roi-set-dir {out_dir} --full')
+              f'  conda run -n wfci_gui python extract_cohort.py --roi-set-dir {out_dir} --full')
 
 
 if __name__ == "__main__":

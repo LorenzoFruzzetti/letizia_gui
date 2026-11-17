@@ -20,7 +20,7 @@ that means the junction tree, not the raw ``D:\\BOTOX_2024\\<MMDDYYYY_label>`` p
 whose session folder would land in the key (CLAUDE.md 9.50).
 
 Run:
-    conda run --no-capture-output -n letizia python bake_alignment_images.py
+    conda run --no-capture-output -n wfci_gui python bake_alignment_images.py
 """
 
 from __future__ import annotations

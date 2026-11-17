@@ -1,6 +1,6 @@
 """Analysis-A completeness check: is the animal x timepoint design complete?
 
-The statistics of analysis A (paired tests across animals, test_pv_detrended_stats.py)
+The statistics of analysis A (paired tests across animals, connectivity_stats.py)
 need every chosen animal at every chosen timepoint. This check says whether the choice
 is complete and, if not, the two ways to complete it: drop the animals that miss a
 timepoint, or drop the timepoints some animal misses (never the baseline).

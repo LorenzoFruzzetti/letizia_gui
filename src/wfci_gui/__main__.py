@@ -3,7 +3,7 @@
 Run it through conda (CLAUDE.md 9.17), from letizia_refactoring/:
 
     $env:PYTHONPATH = "$PWD\\src;$PWD"
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n letizia python -m wfci_gui
+    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -m wfci_gui
 
 Errors are not caught inside the GUI: ``sys.excepthook`` shows the traceback in a dialog
 and appends it to ``<settings folder>/wfci_gui.log`` (GUI_DESIGN_GUIDELINES.md 6.4).
@@ -61,11 +61,11 @@ def main() -> None:
     from .window import MainWindow
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setOrganizationName("letizia")
+    app.setOrganizationName("wfci_gui")
     app.setApplicationName("wfci_gui")
     holder: list = []
     install_excepthook(config_dir, lambda: holder[0] if holder else None)
-    window = MainWindow(QtCore.QSettings("letizia", "wfci_gui"), config_dir)
+    window = MainWindow(QtCore.QSettings("wfci_gui", "wfci_gui"), config_dir)
     holder.append(window)
     if args.cohort:
         window.open_cohort(Path(args.cohort))

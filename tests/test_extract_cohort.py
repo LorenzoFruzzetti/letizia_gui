@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pytest
 
-import run_botox_batch as batch
+import extract_cohort as batch
 
 
 def test_resolve_workers_uses_75_percent_and_caps_explicit_values(monkeypatch):
@@ -189,7 +189,7 @@ def test_save_data_can_still_be_turned_off_from_the_cli(monkeypatch):
     """
     import sys
 
-    monkeypatch.setattr(sys, 'argv', ['run_botox_batch.py', '--no-save-data'])
+    monkeypatch.setattr(sys, 'argv', ['extract_cohort.py', '--no-save-data'])
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG))
 
     assert args.save_data is False
@@ -325,7 +325,7 @@ def test_save_data_dtypes_and_root_are_settable_from_the_cli(monkeypatch):
     """The output path and both storage dtypes must be reachable without editing code."""
     monkeypatch.setattr(
         batch.sys, 'argv',
-        ['run_botox_batch.py', '--save-data', '--save-data-root', r'D:\pixels',
+        ['extract_cohort.py', '--save-data', '--save-data-root', r'D:\pixels',
          '--save-data-dff-dtype', 'float32', '--save-data-f-dtype', 'float16'],
     )
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG))

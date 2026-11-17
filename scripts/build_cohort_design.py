@@ -7,13 +7,13 @@ excluded, with the same columns as the existing design tables (scan_botox_2022/2
     timepoint, recording, recording_index, n_days_for_animal, n_recordings_for_animal, pixel_dir
 
   * group and mouse_line come from animals.csv, timepoint and day 0 from sessions.csv;
-  * day_index / days_since_day1 / recording_index use build_experimental_design.py's own
-    functions, so the numbering is identical to every other design table;
+  * day_index / days_since_day1 / recording_index use the functions of design_helpers.py,
+    so the numbering is identical to every other design table;
   * a missing group, mouse line or timepoint raises (on purpose, as in that script).
 
 Adding a session later shifts that animal's day_index: rerun everything keyed on it.
 
-    conda run --no-capture-output -n letizia python -u build_cohort_design.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u build_cohort_design.py --cohort cohorts\\botox_2023.yaml
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pandas as pd  # noqa: E402
 
-from build_experimental_design import (  # noqa: E402
+from design_helpers import (  # noqa: E402
     add_days_since_day1, add_recording_index, add_within_animal_day_index,
 )
 from wfci_gui.logic.cohort import (  # noqa: E402

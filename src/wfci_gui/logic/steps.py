@@ -50,7 +50,7 @@ class StepStatus:
 STEPS: tuple[StepDef, ...] = (
     StepDef("setup", "0", "Setup", (), """
 <h3>0 · Setup</h3>
-<p>Checks that this computer can run the analysis: conda is installed, the <b>letizia</b>
+<p>Checks that this computer can run the analysis: conda is installed, the <b>wfci_gui</b>
 environment exists with every package, the analysis library is loaded from <i>this</i>
 folder, the tests pass, the raw-data disk is plugged in and the dump disk has enough space.</p>
 <p><b>Run checks</b> tests the environment (a minute; add the test suite for a few more).

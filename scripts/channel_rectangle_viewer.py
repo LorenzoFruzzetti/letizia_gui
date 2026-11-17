@@ -28,8 +28,8 @@ Rule and default parameters: channel_rectangle.py (defaults = the params.json be
 Output: outputs/channel_rectangle/params.json (Save) =
     {length_factor, width_factor, start_offset_factor, statistic}
 
-Run (letizia env; CLAUDE.md 9.17: always through conda run):
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run -n letizia python experiments/channel_rectangle_viewer.py
+Run (wfci_gui env; CLAUDE.md 9.17: always through conda run):
+    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run -n wfci_gui python scripts/channel_rectangle_viewer.py
 or press Run in the editor (RUN_CONFIG below). CLI flags override RUN_CONFIG.
 
 Keys: Up/Down in the table or PgUp/PgDn = previous/next recording; Ctrl+, parameters;
@@ -547,13 +547,13 @@ def initial_params(args: argparse.Namespace) -> RectangleParams:
 def main() -> int:
     args = build_runtime_args()
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv[:1])
-    app.setOrganizationName("letizia")
+    app.setOrganizationName("wfci_gui")
     app.setApplicationName("ChannelRectangleViewer")
     recordings = load_recordings(args)
     print(f"{len(recordings)} recordings of {args.day} from {resolve(args.pixel_root)}")
     window = ViewerWindow(
         recordings, initial_params(args), resolve(args.params),
-        QtCore.QSettings("letizia", "ChannelRectangleViewer"),
+        QtCore.QSettings("wfci_gui", "ChannelRectangleViewer"),
         Path(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)),
     )
     install_excepthook(window)

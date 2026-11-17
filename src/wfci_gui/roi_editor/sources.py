@@ -221,7 +221,7 @@ def pages_from_folders(settings: EditorSettings, cohort: str | None = None
     When NO root holds a recording (raw drive not mounted) and a cohort is given, the
     pages are the cohort's recordings that have a cached image.
     """
-    from run_intermingle_rs import discover_recordings
+    from recording_helpers import discover_recordings
     args = editor_args(settings)
     profile = _profile(args)
     found_by_root = {root: discover_recordings(root, args.pattern) if Path(root).is_dir() else []

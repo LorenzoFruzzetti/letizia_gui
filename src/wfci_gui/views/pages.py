@@ -117,7 +117,7 @@ class JobSection(QtWidgets.QGroupBox):
             self.preview.setHtml(colored(html.escape(note), False))
             return
         built = build_arguments(self.job, state.cohort, state.tables, self.preview_variant)
-        command = display_command(["conda.bat", "run", "--no-capture-output", "-n", "letizia",
+        command = display_command(["conda.bat", "run", "--no-capture-output", "-n", "wfci_gui",
                                    "python", "-u", *built.arguments], built.env)
         marked = html.escape(command)
         for name in sorted(built.overridden):
@@ -690,7 +690,7 @@ class QcPage(StepPage):
         return str(used_recordings(self.controller.state.tables)["day"].min())
 
     def _rectangle_viewer(self) -> None:
-        """experiments/channel_rectangle_viewer.py on one session: odd | even mean images with
+        """scripts/channel_rectangle_viewer.py on one session: odd | even mean images with
         the midline rectangle; parameters from outputs/channel_rectangle/params.json."""
         cohort = self.controller.state.cohort
         arguments, note = rectangle_viewer_arguments(cohort, self.controller.state.tables, self._selected_day())
@@ -801,7 +801,7 @@ class AnalysisAPage(StepPage):
         self.focus.textActivated.connect(lambda t: self._set("focus", t))
         self.stats_cohort = QtWidgets.QComboBox()
         self.stats_cohort.addItems(["", "2026", "2024", "2023", "botox_2022"])
-        self.stats_cohort.setToolTip("The cohort's entry in test_pv_detrended_stats.py. A new cohort has none; "
+        self.stats_cohort.setToolTip("The cohort's entry in connectivity_stats.py. A new cohort has none; "
                                      "adding one is an edit of that script and needs approval.")
         self.stats_cohort.textActivated.connect(lambda t: self._set("stats_cohort", t or None))
         self.timepoints = QtWidgets.QListWidget()

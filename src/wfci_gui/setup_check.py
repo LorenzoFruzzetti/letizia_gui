@@ -1,6 +1,6 @@
-"""Environment checks for the Setup page (gui_spec.md 9.2), run INSIDE the letizia env.
+"""Environment checks for the Setup page (gui_spec.md 9.2), run INSIDE the wfci_gui env.
 
-    conda run --no-capture-output -n letizia python -u -m wfci_gui.setup_check --out <json> [--tests]
+    conda run --no-capture-output -n wfci_gui python -u -m wfci_gui.setup_check --out <json> [--tests]
 
 Writes one JSON file the GUI reads for the step-0 status:
     {"checked": "...", "checks": [{"name": ..., "ok": ..., "detail": ...}, ...]}
@@ -68,7 +68,7 @@ def check_tests() -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Check the letizia env for the GUI's Setup page.")
+    parser = argparse.ArgumentParser(description="Check the wfci_gui env for the GUI's Setup page.")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tests", action="store_true", help="Also run the test suite (minutes).")
     args = parser.parse_args()

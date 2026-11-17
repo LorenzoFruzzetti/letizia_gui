@@ -1,6 +1,6 @@
 """Find conda and build the exact subprocess commands every job runs (gui_spec.md D1, 7).
 
-Every job is ``conda.bat run --no-capture-output -n letizia python -u <script> ...``:
+Every job is ``conda.bat run --no-capture-output -n wfci_gui python -u <script> ...``:
   * through ``conda run``, because calling the env's python.exe directly crashes numpy's
     BLAS (CLAUDE.md 9.17);
   * with ``--no-capture-output``, because otherwise errors are hidden (9.25);
@@ -14,7 +14,7 @@ import os
 import subprocess
 from pathlib import Path
 
-ENV_NAME = "letizia"
+ENV_NAME = "wfci_gui"
 # conda.bat is a batch file: cmd.exe re-parses its arguments after the quotes are gone,
 # so these characters would be redirections or variable expansions (CLAUDE.md 9.18, 9.39).
 CMD_METACHARACTERS = set('%^&|<>"')

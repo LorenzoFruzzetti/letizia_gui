@@ -1,6 +1,6 @@
 """Midline-rectangle channel rule: which interleaved group (odd / even) is GCaMP?
 
-Pure numpy, no Qt. Shared by experiments/channel_rectangle_viewer.py (where the rule was
+Pure numpy, no Qt. Shared by scripts/channel_rectangle_viewer.py (where the rule was
 tuned, channel_rectangle_viewer_spec.md) and roi_editor.py (which draws the rectangle on
 every page and states the decision while the ROIs are placed).
 
@@ -276,7 +276,7 @@ def rectangle_params_for(roi_set_path: str | Path, global_params: RectangleParam
 
 
 # ---------------------------------------------------------------------------
-# Agreement between systems (moved here from experiments/channel_rectangle_viewer.py so
+# Agreement between systems (moved here from scripts/channel_rectangle_viewer.py so
 # the ROI editor's verdict bar uses the same marks).
 # ---------------------------------------------------------------------------
 def gcamp_parity_from_order(channel_order: str) -> str:

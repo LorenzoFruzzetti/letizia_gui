@@ -34,8 +34,7 @@ there because a box is only meaningful together with the Bregma it was drawn fro
 :func:`load_roi_set` returns the atlas and the Bregma; the Lambda distance is
 read separately (:func:`load_lambda_offset`) because it is a record of the *scale
 the boxes were already drawn at*, not something the pipeline has to apply.
-``run_intermingle_rs.py`` and ``run_botox_batch.py`` take a ``roi_set`` path in
-their ``RUN_CONFIG``.
+``extract_cohort.py`` takes a ``roi_set`` path in its ``RUN_CONFIG``.
 
 The two landmarks
 -----------------
@@ -104,9 +103,9 @@ boxes were drawn for that recording and are kept. `c` overrides either way.
 
 Run it (``--no-capture-output`` matters: plain ``conda run`` holds every print until
 the process exits, so an interactive script looks like it is doing nothing):
-    conda run --no-capture-output -n letizia python roi_editor.py       # uses RUN_CONFIG
-    conda run --no-capture-output -n letizia python roi_editor.py --folders "\\\\host\\share\\...\\R1\\t1"
-    conda run --no-capture-output -n letizia python roi_editor.py --manifest manifests\\botox_restani_manifest.csv --scope recording
+    conda run --no-capture-output -n wfci_gui python roi_editor.py       # uses RUN_CONFIG
+    conda run --no-capture-output -n wfci_gui python roi_editor.py --folders "\\\\host\\share\\...\\R1\\t1"
+    conda run --no-capture-output -n wfci_gui python roi_editor.py --manifest manifests\\botox_restani_manifest.csv --scope recording
 From VS Code: the "ROI editor (roi_editor.py)" launch config (external terminal).
 
 This script NEVER runs the analysis -- it only draws geometry and writes a file. The
@@ -209,7 +208,7 @@ RUN_CONFIG: dict[str, Any] = {
     # image of the folder; a handful (5-20) is the same anatomy with less noise.
     "preview_frames": 1,
     # Midline-rectangle channel check (channel_rectangle.py, tuned in
-    # experiments/channel_rectangle_viewer.py): the rectangle is drawn on every page and
+    # scripts/channel_rectangle_viewer.py): the rectangle is drawn on every page and
     # the header says which interleaved group (odd/even) it calls GCaMP. Its parameters
     # come from this params.json (the viewer's Save); missing file = the module defaults.
     "channel_rectangle_params": "outputs/channel_rectangle/params.json",
@@ -960,7 +959,7 @@ def sessions_from_manifest(args: argparse.Namespace,
         bregma_row = int(row["bregma_row"]) if row.get("bregma_row") else args.bregma_row
         bregma_col = int(row["bregma_col"]) if row.get("bregma_col") else args.bregma_col
 
-        # The key is also the ROI-set filename stem, and run_botox_batch.py looks
+        # The key is also the ROI-set filename stem, and extract_cohort.py looks
         # units up as "<day>_<animal>.yaml" -- keep the two spellings identical.
         if args.scope == "animal":
             entries = [(_safe(f"{day}_{animal}"), paths[0])]
@@ -2336,7 +2335,7 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p.add_argument("--preview-frames", type=int, default=defaults["preview_frames"])
     p.add_argument("--channel-rectangle-params", default=defaults["channel_rectangle_params"],
                    help="params.json of the midline-rectangle channel check "
-                        "(experiments/channel_rectangle_viewer.py Save).")
+                        "(scripts/channel_rectangle_viewer.py Save).")
     p.add_argument("--rectangle-frames", type=int, default=defaults["rectangle_frames"],
                    help="Raw frames of each parity averaged for the rectangle decision.")
     p.add_argument("--bregma-row", type=int, default=defaults["bregma_row"])

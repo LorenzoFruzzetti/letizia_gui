@@ -35,7 +35,7 @@ from wfci_gui.logic.defaults import apply_assignment_overrides, literal_value  #
 
 # Edit this section to run without CLI flags (CLAUDE.md 5.2): a script and its overrides.
 RUN_CONFIG = {
-    "script": None,          # e.g. "test_pv_detrended_stats.py"
+    "script": None,          # e.g. "connectivity_stats.py"
     "overrides": {},         # e.g. {"fdr_alpha": 0.1}
     "script_args": [],
 }

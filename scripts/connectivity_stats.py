@@ -3,7 +3,7 @@
 Input: per-recording Pearson R of `variant` (default the 20 s running-median baseline
 dF/F, CLAUDE.md 9.43) from outputs/roi_pixel_connectivity.
 
-Time axis (`time_axis`, env PV_STATS_TIME_AXIS):
+Time axis (`time_axis`, env CONNECTIVITY_STATS_TIME_AXIS):
     "timepoint" (default): sessions are grouped by the `timepoint` class of
         experimental_design.csv (days since the animal's day 1, CLAUDE.md 9.47). The first
         class in `timepoints` is the baseline; 60D/77D are left out because only PV3/PV4
@@ -28,7 +28,7 @@ Tests, each for time point d vs baseline and for "post" = mean of the later poin
         and decrease separately) -> nbs_components.csv, all_to_all_change_nbs.png/.svg and
         <focus>_to_all_change_nbs.png/.svg (dot = edge of a significant component)
 
-Region focus (env PV_STATS_FOCUS, "SSp" default or "motor"): the same tests on the region's
+Region focus (env CONNECTIVITY_STATS_FOCUS, "SSp" default or "motor"): the same tests on the region's
 own edges and its edges to every other region (motor also split by its hemisphere),
 written as <focus>_*.csv/.png next to the files below.
 
@@ -41,7 +41,7 @@ Output (outputs/pv_detrended_stats/<variant>_<animals tag>_<range tag>/, e.g. _n
     motor_x_regions_combined_change_r.png/.svg and motor_x_regions_combined_tests.csv,
     metrics_by_day_relative_r.png/.svg (mean +- SD across animals, relative and absolute r)
 
-Run: conda run --no-capture-output -n letizia python test_pv_detrended_stats.py
+Run: conda run --no-capture-output -n wfci_gui python connectivity_stats.py
 """
 
 import os
@@ -65,7 +65,7 @@ repo_root = Path(__file__).resolve().parent
 connectivity_file = "roi_pixel_connectivity.npz"   # per recording: R_roi, roi_labels
 
 # A COHORT is the (design table, connectivity root, group, animals, timepoints) bundle
-# this analysis runs on, picked with env PV_STATS_COHORT. Every other parameter below is
+# this analysis runs on, picked with env CONNECTIVITY_STATS_COHORT. Every other parameter below is
 # shared, so the tests, figures and file names are the same for every cohort.
 #   "2026" (default, unchanged): the PV group of pixel_data.
 #   "2024": the BOTOX_2024 cohort, dumps in pixel_data_2024, design built by
@@ -73,7 +73,7 @@ connectivity_file = "roi_pixel_connectivity.npz"   # per recording: R_roi, roi_l
 #   "2023": the July 2023 PV-CRE BoNT cohort, dumps in pixel_data_2023 (CLAUDE.md 9.64).
 #   "botox_2022": the 2022 cohort on E: (CLAUDE.md 9.61/9.62). Its connectivity was run
 #           with --roi-set-dir roi_sets/rebuilt, hence the _roi_rebuilt variant suffix.
-cohort = os.environ.get("PV_STATS_COHORT", "2026")
+cohort = os.environ.get("CONNECTIVITY_STATS_COHORT", "2026")
 include_animals = None                   # None = every animal of `group`
 exclude_days = []                        # session days dropped before anything else
 default_variant = "pixels_median_dff_20s_full"
@@ -100,10 +100,10 @@ elif cohort == "2024":
     group = "NA"
     # The tests require every animal x timepoint, and late sessions are missing for two
     # mice (empty source folders): SP20_R00 from 60D, SP20_000 from 90D. So there are
-    # two complete designs, picked with env PV_STATS_RANGE_2024:
+    # two complete designs, picked with env CONNECTIVITY_STATS_RANGE_2024:
     #   "BL-45D"  (default): all 8 mice, BL..45D -- the original run, unchanged;
     #   "BL-120D": the 6 mice recorded at every timepoint, BL..120D.
-    range_2024 = os.environ.get("PV_STATS_RANGE_2024", "BL-45D")
+    range_2024 = os.environ.get("CONNECTIVITY_STATS_RANGE_2024", "BL-45D")
     if range_2024 == "BL-45D":
         exclude_animals = []
         timepoints = ["BL", "BL2", "3D", "15D", "30D", "45D"]
@@ -112,7 +112,7 @@ elif cohort == "2024":
         timepoints = ["BL", "BL2", "3D", "15D", "30D", "45D", "60D",
                       "75D", "90D", "105D", "120D"]
     else:
-        raise ValueError(f"PV_STATS_RANGE_2024 must be 'BL-45D' or 'BL-120D', not {range_2024!r}")
+        raise ValueError(f"CONNECTIVITY_STATS_RANGE_2024 must be 'BL-45D' or 'BL-120D', not {range_2024!r}")
     exclude_recordings = []
 elif cohort == "botox_2022":
     design_path = Path(r"E:\Laura_botox_2022_pixeldata\experimental_design.csv")
@@ -140,23 +140,23 @@ elif cohort == "2023":
     exclude_recordings = []
     timepoints = ["BL", "3D", "15D", "30D"]
 else:
-    raise ValueError(f"PV_STATS_COHORT must be '2026', '2024', '2023' or 'botox_2022', not {cohort!r}")
+    raise ValueError(f"CONNECTIVITY_STATS_COHORT must be '2026', '2024', '2023' or 'botox_2022', not {cohort!r}")
 
-# env PV_STATS_OUTPUT_ROOT puts this run's output folder somewhere else (e.g. a separate
+# env CONNECTIVITY_STATS_OUTPUT_ROOT puts this run's output folder somewhere else (e.g. a separate
 # comparison) without touching the cohort's usual one.
-output_root = Path(os.environ.get("PV_STATS_OUTPUT_ROOT", output_root))
+output_root = Path(os.environ.get("CONNECTIVITY_STATS_OUTPUT_ROOT", output_root))
 
-# 20 s running-median baseline dF/F, no GSR; set PV_STATS_VARIANT=pixels_median_dff_20s_full_gsr
+# 20 s running-median baseline dF/F, no GSR; set CONNECTIVITY_STATS_VARIANT=pixels_median_dff_20s_full_gsr
 # (or any other roi_pixel_connectivity folder) to rerun everything on another variant.
-variant = os.environ.get("PV_STATS_VARIANT", default_variant)
+variant = os.environ.get("CONNECTIVITY_STATS_VARIANT", default_variant)
 # "timepoint": compare the timepoint classes (BL, 3D, ...); "day_index": the session number.
-time_axis = os.environ.get("PV_STATS_TIME_AXIS", default_time_axis)
+time_axis = os.environ.get("CONNECTIVITY_STATS_TIME_AXIS", default_time_axis)
 baseline_day_index = 1                   # time_axis "day_index" only
 # time_axis "day_index" only; day 5 has only PV3/PV4 (2026) and is missing for R10_NS (2022).
 last_day_index = 4
-# How the relative-r figures show a later day (env PV_STATS_RELATIVE_MODE): "ratio" = r / day 1,
+# How the relative-r figures show a later day (env CONNECTIVITY_STATS_RELATIVE_MODE): "ratio" = r / day 1,
 # "difference" = r - day 1. None: ratio without GSR, difference with GSR (day-1 r ~ 0 after GSR).
-relative_mode = os.environ.get("PV_STATS_RELATIVE_MODE", default_relative_mode)
+relative_mode = os.environ.get("CONNECTIVITY_STATS_RELATIVE_MODE", default_relative_mode)
 fdr_alpha = 0.05                         # Benjamini-Hochberg level
 uncorrected_alpha = 0.05                 # marks edges in the figure
 color_limit_percentile = 99.0            # centred colour scale, as test_pv_antea_mean.py
@@ -647,15 +647,15 @@ for scale in ("centered", "uncentered", "fixed", "per_panel"):
 print(f"saved {output_dir}")
 
 # ================================================================ region focus
-# Same tests restricted to one region's ROIs (`focus_prefix`, env PV_STATS_FOCUS: "SSp"
+# Same tests restricted to one region's ROIs (`focus_prefix`, env CONNECTIVITY_STATS_FOCUS: "SSp"
 # somatosensory, default, or "motor" MOs + MOp). Edge families are smaller here, so
 # Benjamini-Hochberg runs over the focus edges only:
 #     within: edges between two focus ROIs; to_all: every edge with a focus ROI.
 # Output files are prefixed with the focus name, so both foci share one output folder.
 region_prefixes = {"SSp": ("SSp",), "motor": ("MOs", "MOp"), "RSP": ("RSP",), "visual": ("VIS",)}
-focus_prefix = os.environ.get("PV_STATS_FOCUS", "SSp")
+focus_prefix = os.environ.get("CONNECTIVITY_STATS_FOCUS", "SSp")
 if focus_prefix not in ("SSp", "motor"):
-    raise ValueError(f"PV_STATS_FOCUS must be 'SSp' or 'motor', not {focus_prefix!r}")
+    raise ValueError(f"CONNECTIVITY_STATS_FOCUS must be 'SSp' or 'motor', not {focus_prefix!r}")
 other_region_prefixes = {region: prefixes for region, prefixes in region_prefixes.items() if region != focus_prefix}
 # True: also split each focus-to-region metric by the focus ROI's hemisphere (_L_to_ / _R_to_).
 focus_split_by_side = focus_prefix == "motor"
@@ -954,7 +954,7 @@ def plot_relative_and_absolute_r_sd(masks, tests, file_stem, title, show_animals
 if relative_mode is None:
     relative_mode = "difference" if variant.removesuffix("_roi_rebuilt").endswith("_gsr") else "ratio"
 if relative_mode not in ("ratio", "difference"):
-    raise ValueError(f"PV_STATS_RELATIVE_MODE must be 'ratio' or 'difference', not {relative_mode!r}")
+    raise ValueError(f"CONNECTIVITY_STATS_RELATIVE_MODE must be 'ratio' or 'difference', not {relative_mode!r}")
 plot_relative_and_absolute_r_sd(metric_masks, metric_tests, "metrics_by_day_relative_r",
                                 f"{variant}, {'+'.join(animals)}: mean Pearson r "
                                 f"{'relative to' if relative_mode == 'ratio' else 'change from'} {baseline_label} "

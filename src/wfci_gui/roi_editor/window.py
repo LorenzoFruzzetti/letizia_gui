@@ -1,6 +1,6 @@
 """The ROI editor window (roi_editor_spec.md 6.2): verdict bar + odd | even panels + docks.
 
-Layout, after experiments/channel_rectangle_viewer.py:
+Layout, after scripts/channel_rectangle_viewer.py:
 
 * **verdict bar** (top): which parity each system calls GCaMP, with ✓ / ⚠ / – marks
   (``channel_rectangle.agreement_marks``): the manifest's ``channel_order``, the channel

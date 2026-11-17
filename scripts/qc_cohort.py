@@ -29,7 +29,7 @@ with a reason; the user decides on the QC page.
 
 Writes ``<output_root>/qc_table.csv`` and ``<output_root>/qc_levels_by_session.csv``.
 
-    conda run --no-capture-output -n letizia python -u qc_cohort.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u qc_cohort.py --cohort cohorts\\botox_2023.yaml
 """
 
 from __future__ import annotations

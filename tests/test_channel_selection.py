@@ -48,7 +48,7 @@ from wfci.io import (  # noqa: E402
 )
 from wfci.streaming import prepare_interleaved_trial  # noqa: E402
 
-import run_botox_batch as batch  # noqa: E402
+import extract_cohort as batch  # noqa: E402
 
 FRAME_SHAPE = (32, 32)          # raw -> 16x16 half-res -> 8x8 final grid
 TRIM = 3
@@ -106,7 +106,7 @@ def old_single_sources(folder: Path, order: str):
 
 
 def old_merged_sources(folders: list[Path], orders: list[str]):
-    """What run_botox_batch's _build_concat_streaming_source did: split, trim, concat."""
+    """What extract_cohort's _build_concat_streaming_source did: split, trim, concat."""
     all_g, all_e = [], []
     for folder, order in zip(folders, orders):
         g, e = interleaved_channel_files(folder, channel_order=order)
@@ -409,7 +409,7 @@ def test_non_16_bit_raw_frames_are_buffered_in_float64(tmp_path, dtype, expected
 
 
 # ---------------------------------------------------------------------------
-# run_botox_batch: per-job flow, meta, summary, cleanup
+# extract_cohort: per-job flow, meta, summary, cleanup
 # ---------------------------------------------------------------------------
 def _batch_args(tmp_path: Path, **overrides) -> argparse.Namespace:
     values = dict(

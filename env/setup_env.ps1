@@ -1,4 +1,4 @@
-# Build or repair the `letizia` conda environment (gui_spec.md 9.1).
+# Build or repair the `wfci_gui` conda environment (gui_spec.md 9.1).
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_env.ps1 [-SkipTests]
 #
@@ -12,7 +12,7 @@
 # cmd.exe would read `>=` as a redirection (9.18).
 
 param(
-    [string]$EnvName = "letizia",
+    [string]$EnvName = "wfci_gui",
     [switch]$SkipTests
 )
 

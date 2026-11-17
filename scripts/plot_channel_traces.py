@@ -62,7 +62,7 @@ each as % from the mean of its own kind. The CSV then gains ``status``, ``mean_o
 
 Run:
     $env:PYTHONPATH = "$PWD\\src;$PWD"
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n letizia python -u plot_channel_traces.py
+    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -u plot_channel_traces.py
     ... plot_channel_traces.py --pixel-root pixel_data_2024 --batch-summary-csv none --old-manifest-csv none --channel-assignment-csv none --expected-disagreements none
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from epileptic_by_area_animal_day_pixels import crop_slices
+from pixel_helpers import crop_slices
 from roi_pixel_connectivity import read_meta, recording_boxes
 
 REPO_ROOT = Path(__file__).resolve().parent

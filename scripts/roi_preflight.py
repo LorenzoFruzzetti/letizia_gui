@@ -1,6 +1,6 @@
 """Pre-flight of a cohort's rebuilt ROI sets: every box inside the dump window and the grid.
 
-run_botox_batch.py crops each pixel dump to a Bregma-relative window
+extract_cohort.py crops each pixel dump to a Bregma-relative window
 (``save_data_window`` = rows -29..47, cols -44..43 around Bregma) and refuses a box outside
 it only at run time, recording by recording; it never checks that the window itself fits
 the grid before the crop (CLAUDE.md 9.50/9.51). This checks every set of the cohort up
@@ -18,7 +18,7 @@ fails here by design (9.50): the dump window assumes Lambda below.
 Writes ``<output_root>/roi_preflight.csv`` (one row per recording) and exits with code 1
 when any recording fails, so the job shows as failed.
 
-    conda run --no-capture-output -n letizia python -u roi_preflight.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u roi_preflight.py --cohort cohorts\\botox_2023.yaml
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, wri
 RUN_CONFIG: dict[str, Any] = {
     "cohort": r"cohorts\botox_2023.yaml",
     # Bregma-relative half-open window (rows start, rows end, cols start, cols end); must
-    # equal run_botox_batch.py's save_data_window.
+    # equal extract_cohort.py's save_data_window.
     "window": [-29, 47, -44, 43],
     "prefer_cli_args": True,
 }

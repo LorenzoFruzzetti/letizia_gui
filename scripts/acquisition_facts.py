@@ -13,7 +13,7 @@ It writes ``<output_root>/acquisition_facts.json`` and prints a table. It does n
 cohort file: the user checks the values on the Acquisition page and confirms them there.
 
 Run it:
-    conda run --no-capture-output -n letizia python -u acquisition_facts.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u acquisition_facts.py --cohort cohorts\\botox_2023.yaml
 """
 
 from __future__ import annotations
