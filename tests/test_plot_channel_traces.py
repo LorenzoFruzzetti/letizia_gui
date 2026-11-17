@@ -29,7 +29,7 @@ def _recording(folder: Path, status: str, order: str, verdict: str) -> None:
 @pytest.fixture
 def unit(tmp_path, monkeypatch):
     """One unit: t1 labelled and done, t2 stored by position."""
-    folder = tmp_path / "240101_A1"
+    folder = tmp_path / "210101_A1"
     _recording(folder / "t1", "done", "gcamp_first", "certain")
     _recording(folder / "t2", plot.NEEDS_DECISION, "odd_even_unassigned", "not_interleaved")
     monkeypatch.setattr(plot, "recording_boxes", lambda meta: (None, {"a": None}))
@@ -38,9 +38,9 @@ def unit(tmp_path, monkeypatch):
     with open(summary, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=["day", "animal", "recording", "status", "channel_verdict"])
         writer.writeheader()
-        writer.writerow(dict(day="240101", animal="A1", recording="t1", status="done",
+        writer.writerow(dict(day="210101", animal="A1", recording="t1", status="done",
                              channel_verdict="certain"))
-        writer.writerow(dict(day="240101", animal="A1", recording="t2",
+        writer.writerow(dict(day="210101", animal="A1", recording="t2",
                              status=plot.NEEDS_DECISION, channel_verdict="not_interleaved"))
     return tmp_path, folder, summary
 
@@ -55,7 +55,7 @@ def test_mixed_unit_draws_odd_even_and_labelled_recordings(unit):
     root, folder, summary = unit
     args = SimpleNamespace(channel_assignment_csv="none", old_manifest_csv="none",
                            batch_summary_csv=str(summary))
-    records = plot.build_records(root, args)["240101_A1"]
+    records = plot.build_records(root, args)["210101_A1"]
     assert [r["order"] for r in records] == ["gcamp_first", "odd_even_unassigned"]
 
     plot.plot_folder(_job(folder, records))

@@ -1,7 +1,7 @@
-"""Batch resting-state FC over the BOTOX_RESTANI manifest, per recording.
+"""Batch resting-state FC over a cohort manifest, per recording.
 
-This is a *study script* (P2 boundary: dataset policy lives here, mechanism lives
-in ``wfci``). It reads the manifest produced by ``scan_botox_dataset.py`` and, for
+This is a *study script* (dataset policy lives here, mechanism lives
+in ``wfci``). It reads the manifest produced by ``scan_cohort.py`` and, for
 each (day, animal) row, runs a cerebellar resting-state connectivity analysis over
 that animal's ``t1..tn`` interleaved recordings.
 
@@ -33,15 +33,15 @@ the default separate mode, under a further ``<t#>\\`` subfolder per recording:
     * roi_traces[_debug].png    -- trial-averaged ROI traces.
     * roi_overlay_debug.png     -- ROI placement (debug/in-memory mode only).
 ``save_data`` is ON in RUN_CONFIG, so it also writes, under
-``<save_data_root>`` -- ``pixel_data\\`` inside this repo, gitignored -- the
+``<save_data_root>`` the
 PER-PIXEL volumes the ROI means are reduced from:
     * pixels_dff_*.npy          -- corrected dF/F per pixel, [time, y, x], float16.
     * pixels_f_gcamp_*.npy      -- raw GCaMP fluorescence per pixel, float32.
     * pixels_f_emo_*.npy        -- raw reflectance fluorescence per pixel, float32.
     * pixels_meta_*.npz         -- mean_f/mean_r baselines, the crop region, Bregma.
 Frames are cropped to a Bregma-relative window (``save_data_window``), so every
-recording's volume has the same shape AND the same anatomical meaning. ~197 MB per
-recording, ~70 GB for the whole manifest; the run refuses to start if the
+recording's volume has the same shape AND the same anatomical meaning. About 200 MB
+per recording at the default window; the run refuses to start if the
 estimate will not fit the disk. Pass ``--no-save-data`` to skip them. The
 volumes are written as the recording streams, so they cost no extra pass and no
 extra time, and the ROI traces are unchanged.
@@ -51,7 +51,7 @@ One summary row per recording (or per unit when merging) is appended to
 EXECUTION. The supported default is ``workers=1``: every recording runs in the
 main process, avoiding the native Windows DLL failures observed only in spawned
 workers. Serial logs are printed live. ``workers > 1`` remains available as an
-experimental ``ProcessPoolExecutor`` path, but is not recommended on this machine.
+experimental ``ProcessPoolExecutor`` path, but is not recommended on Windows.
 Parallel worker logs are buffered and replayed when each job lands; the parent
 prints a heartbeat every 15 seconds. Ctrl+C cancels queued jobs and terminates
 active workers; completed ``.npz`` results remain resumable in either mode.
@@ -76,7 +76,7 @@ ROI set drawn with ``roi_editor.py`` is configured -- ``roi_set_dir`` for per-un
 files (``<day>_<animal>.yaml``) or ``roi_set`` for one file shared by every unit.
 
 Row selection:
-    * ``select`` -- list of "day/animal" keys to run (e.g. ["260611/R1"]).
+    * ``select`` -- list of "day/animal" keys to run (e.g. ["200101/A1"]).
       Empty list = every row in the manifest.
     * ``max_rows`` -- cap the number of rows actually run (after ``select``).
 
@@ -88,7 +88,7 @@ this does the whole batch:
     conda run -n wfci_gui python extract_cohort.py                  # editor mode, uses RUN_CONFIG
     conda run -n wfci_gui python extract_cohort.py --workers 1      # explicit reliable default
     conda run -n wfci_gui python extract_cohort.py --workers 2      # experimental on Windows
-    conda run -n wfci_gui python extract_cohort.py --select 260611/R1 260611/R2
+    conda run -n wfci_gui python extract_cohort.py --select 200101/A1 200101/A2
     conda run -n wfci_gui python extract_cohort.py --debug          # fast smoke test
     conda run -n wfci_gui python extract_cohort.py --no-skip-existing   # recompute everything
     conda run -n wfci_gui python extract_cohort.py --no-save-data       # ROI means only, no pixel volumes
@@ -176,12 +176,10 @@ POOL_HEARTBEAT_SECONDS = 15.0
 # Edit this section to run without CLI flags.
 # ---------------------------------------------------------------------------
 RUN_CONFIG: dict[str, Any] = {
-    # Manifest written by scan_botox_dataset.py.
-    "manifest": r"manifests\botox_restani_manifest.csv",
-    # Root under which per-unit output folders are created. Kept separate from the
-    # older outputs\botox_restani (shared cortex22 geometry) so the two runs do not
-    # overwrite each other.
-    "output_root": r"outputs\botox_restani_rebuilt",
+    # Manifest written by scan_cohort.py.
+    "manifest": r"manifest.csv",
+    # Root under which per-unit output folders are created.
+    "output_root": r"outputs",
     # Which units to run: "day/animal" keys. Empty list = all rows in the manifest.
     "select": [],
     # Cap on rows actually run after `select` (None = no cap). Handy for a quick test.
@@ -201,12 +199,12 @@ RUN_CONFIG: dict[str, Any] = {
     # Each file's own Bregma wins over the manifest's, so once you have drawn
     # per-animal sets with roi_editor.py, set roi_set_dir = r"roi_sets" and those
     # take precedence over this shared file.
-    # roi_sets\rebuilt holds ONE file PER RECORDING, <day>_<animal>_<t#>.yaml (355
-    # of them, one for every recording in the manifest), regenerated by
+    # roi_sets\rebuilt holds ONE file PER RECORDING, <day>_<animal>_<t#>.yaml (one
+    # for every recording in the manifest), regenerated by
     # rebuild_roi_sets.py as a pure mirror-exact rescale of the cortex22 baseline.
     # resolve_roi_set() picks the per-recording file first, so each t# is analysed
     # with the boxes and Bregma drawn for it. cortex22 stays as the fallback for a
-    # recording with no file -- with the current directory that never triggers.
+    # recording with no file.
     "roi_set_dir": r"roi_sets\rebuilt",
     "roi_set": r"atlas\cortex22_roi_set.yaml",
     # How the animal's t1..tn recordings are treated:
@@ -235,58 +233,52 @@ RUN_CONFIG: dict[str, Any] = {
     # to force everything to be recomputed from scratch.
     "skip_existing": True,
     # --- per-pixel dumps (save_data) ---------------------------------------
-    # True (the setting for this run) additionally writes, per recording, the
+    # True (the default) additionally writes, per recording, the
     # pixel-wise volumes the ROI means are computed from -- the corrected dF/F and
     # the raw fluorescence of BOTH channels -- as .npy files written frame by frame
-    # while the recording streams. Costs ~197 MB per recording (see
-    # save_data_window), ~70 GB across the full 355-recording manifest; the run
-    # refuses to start if that will not fit. False keeps the pipeline as it was:
+    # while the recording streams. Costs about 200 MB per recording at the default
+    # save_data_window; the run refuses to start if that will not fit. False keeps the pipeline as it was:
     # only the 22 ROI means survive each frame.
     "save_data": True,
     # Where the volumes go. None puts them beside the .npz in the analysis output
     # folder. A path mirrors the same <day>_<animal>\<t#>\ tree under it, which is
     # what you want when the pixels are far larger than the rest of the outputs.
-    # "pixel_data" is relative to the repo root, so the volumes land in THIS
-    # project folder, separate from outputs\ -- and .gitignore excludes it, since
-    # ~70 GB of .npy must never enter git history.
     "save_data_root": r"pixel_data",
     # Crop, as (row_start, row_end, col_start, col_end) offsets RELATIVE TO BREGMA
     # on the final 128x128 grid -- the same coordinate system the ROI boxes use.
-    # (-29, 47, -44, 43) is the measured union of every box across all 356 files in
-    # roi_sets\rebuilt: a 76x87 window, 40.4% of the frame, that fits inside the
-    # grid for every one of them. Being Bregma-relative it has the same anatomical
+    # (-29, 47, -44, 43) is the default Bregma-relative dump window, 76x87, which
+    # holds every cortex22 box at the usual scales. Being Bregma-relative it has the same anatomical
     # meaning in every animal, so dumps stack directly for a group analysis --
     # which a full-frame dump does not, since the frames are only aligned to the
     # camera. Set to None to write the whole 128x128 frame (2.5x the disk).
     "save_data_window": (-29, 47, -44, 43),
     # On-disk dtypes. These are a STORAGE choice; the numeric path stays float64.
-    # Measured on real recordings: float16 costs dF/F at most 0.004 percentage
-    # points against a signal sd of 0.66-0.97 pp, while float32 is *exactly*
-    # lossless for raw F (the twice-box-downsampled values are k/16). float16 is
-    # NOT safe for raw F: F_emo was measured at 63194 against float16's 65504
+    # float16 costs dF/F a rounding error far below its signal sd, while float32 is
+    # *exactly* lossless for raw F (the twice-box-downsampled values are k/16).
+    # float16 is NOT safe for raw F: bright pixels come close to float16's 65504
     # ceiling, so a brighter session would overflow -- PixelDump raises rather
     # than writing inf if you try.
     "save_data_dff_dtype": "float16",
     "save_data_f_dtype": "float32",
-    # --- raw-frame handling, for cohorts not shaped like the 2026 one -------
-    # Raw image glob inside each t# folder. The 2022 Basler files end in .tiff.
+    # --- raw-frame handling, set from the cohort's acquisition facts ------
+    # Raw image glob inside each t# folder (some cameras write .tiff).
     "pattern": "*.tif",
     # Quarter turns applied to every frame right after decoding (np.rot90 sign,
     # -1 = clockwise). MUST equal the rotation the ROI sets were drawn on
-    # (batch_roi_select.py rot90_k), or every box lands on the wrong anatomy.
-    # The 2022 camera sits at 90 degrees: -1. Every other cohort: 0.
+    # (the cohort's acquisition.rot90_k), or every box lands on the wrong anatomy.
+    # A camera mounted at 90 degrees needs -1; otherwise 0.
     "rot90_k": 0,
     # How acquisition order is read off the raw file names (wfci.io.sorted_frame_files).
-    # "name" = lexicographic, right for zero-padded indices (every cohort before 2023).
-    # "number" = by the trailing integer: the July 2023 cohort's files are ..._1.tif,
-    # ..._2.tif, ..., ..._10.tif, and a name sort would mix the two channels. MUST
-    # equal the order the ROI previews were built with (batch_roi_select.py).
+    # "name" = lexicographic, right for zero-padded indices.
+    # "number" = by the trailing integer: for files named ..._1.tif,
+    # ..._2.tif, ..., ..._10.tif a name sort would mix the two channels. MUST
+    # equal the order the ROI previews were built with.
     "frame_order": "name",
     # Onset frames dropped per channel. None = the profile's own trim (20 frames,
-    # 2 s at the 2026 cohort's 10 Hz per channel). A cohort at another rate sets
-    # the same DURATION in frames, e.g. 50 at the 2022 cohort's 25 Hz.
+    # 2 s at 10 Hz per channel). A cohort at another rate sets the same DURATION
+    # in frames, e.g. 50 at 25 Hz.
     "trim_frames": None,
-    # --- single-read channel selection (channel_selection_spec.md) ----------
+    # --- single-read channel selection ---------------------------
     # Every t# is read from disk ONCE: both interleaved groups are buffered
     # unlabelled, "auto" decides which is GCaMP from every frame, then the usual
     # baseline + correction run on the buffer. Where the buffer lives:
@@ -294,7 +286,7 @@ RUN_CONFIG: dict[str, Any] = {
     #             buffer_dir if set and 1.1x fits, else "none".
     #   "ram" / "disk" -- forced. "none" -- no buffer, the TIFFs are read twice.
     "channel_buffer": "auto",
-    # Folder for "disk" buffers (float32 .npy, ~1.6 GB per 2026 recording). Should
+    # Folder for "disk" buffers (float32 .npy, about 1.6 GB per 6000-frame recording). Should
     # be an SSD; None disables the disk option of "auto".
     "buffer_dir": None,
     # Keep the unlabelled half-res odd/even volumes next to the pixel dump as
@@ -312,9 +304,9 @@ RUN_CONFIG: dict[str, Any] = {
     #            save_data; a merged run has no single odd/even pair and still skips.
     #   True  -- write nothing for it (status skipped).
     "skip_not_interleaved": False,
-    # Per-frame level the order is decided on: "median" (check_channel_assignment.py's
-    # statistic; matched channel_assignment_2024.csv 9/9) or "top_percent" (mean of
-    # the brightest top_percent% pixels; 3/9 wrong, the old auto's errors).
+    # Per-frame level the order is decided on: "median" (the frame median; the more
+    # reliable of the two) or "top_percent" (mean of the brightest top_percent% pixels,
+    # which can call the wrong order when the channels are close in brightness).
     "level_statistic": "median",
     "top_percent": 10.0,
     # Pixels the per-frame levels are taken over: "frame" (whole frame; what the
@@ -327,7 +319,7 @@ RUN_CONFIG: dict[str, Any] = {
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     """Minimal CLI overrides for the knobs worth flipping from the terminal."""
-    p = argparse.ArgumentParser(description="Batch RS-FC over the BOTOX manifest.")
+    p = argparse.ArgumentParser(description="Batch RS-FC over a cohort manifest.")
     p.add_argument("--manifest", default=defaults["manifest"], help="Manifest CSV.")
     p.add_argument("--output-root", default=defaults["output_root"])
     p.add_argument("--select", nargs="*", default=defaults["select"],
@@ -361,7 +353,7 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p.add_argument("--save-data", action=argparse.BooleanOptionalAction,
                    default=defaults["save_data"],
                    help="Also write the per-pixel dF/F and raw-F volumes "
-                        "(~197 MB per recording).")
+                        "(about 200 MB per recording).")
     p.add_argument("--save-data-root", default=defaults["save_data_root"],
                    metavar="DIR",
                    help="Root for the per-pixel volumes. Default: beside the .npz. "
@@ -371,24 +363,24 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p.add_argument("--save-data-dff-dtype", default=defaults["save_data_dff_dtype"],
                    choices=DUMP_DTYPES, metavar="DTYPE",
                    help=f"On-disk dtype for the dF/F volume {DUMP_DTYPES}. "
-                        f"Default float16: measured cost <=0.004 percentage points "
-                        f"against a 0.7-2.1 pp signal, and it halves the file.")
+                        f"Default float16: its rounding error is far below the "
+                        f"signal sd, and it halves the file.")
     p.add_argument("--save-data-f-dtype", default=defaults["save_data_f_dtype"],
                    choices=DUMP_DTYPES, metavar="DTYPE",
                    help=f"On-disk dtype for the two raw-F volumes {DUMP_DTYPES}. "
                         f"Default float32, which is EXACTLY lossless here. float16 "
-                        f"halves them but has only ~3%% headroom over the measured "
-                        f"peak and quantises F in steps of 32 counts at the bright "
-                        f"end -- see CLAUDE.md 9.16.")
+                        f"halves them but leaves little headroom below a bright "
+                        f"pixel and quantises F in steps of 32 counts at the bright "
+                        f"end.")
     p.add_argument("--pattern", default=defaults["pattern"],
-                   help="Raw image glob in each t# folder (2022 cohort: *.tiff).")
+                   help="Raw image glob in each t# folder (e.g. *.tiff).")
     p.add_argument("--rot90-k", dest="rot90_k", type=int, default=defaults["rot90_k"],
                    help="Quarter turns per frame (np.rot90; -1 = clockwise). Must match "
                         "the rotation the ROI sets were drawn on.")
     p.add_argument("--frame-order", choices=["name", "number"],
                    default=defaults["frame_order"],
                    help="Order raw files by name (zero-padded indices) or by their "
-                        "trailing number (July 2023 cohort).")
+                        "trailing number (indices not zero-padded).")
     p.add_argument("--trim-frames", type=int, default=defaults["trim_frames"],
                    metavar="N", help="Onset frames dropped per channel "
                                      "(default: the profile's trim).")
@@ -414,7 +406,7 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
                    help="Pixels the channel levels are taken over: whole frame or ROI union.")
     ns = p.parse_args()
     # Not a flag: changing the window changes which pixels the array even contains,
-    # so it belongs in RUN_CONFIG next to the comment recording how it was measured.
+    # so it belongs in RUN_CONFIG next to the comment that explains it.
     ns.save_data_window = defaults["save_data_window"]
     return ns
 
@@ -540,13 +532,13 @@ def _geometry_for(row: dict[str, str], args: argparse.Namespace,
 
 def _frame_options(args: argparse.Namespace) -> tuple[str, int]:
     """``(pattern, rot90_k)`` for reading raw frames. getattr: namespaces built before
-    these options existed (tests, older callers) mean the 2026 defaults."""
+    these options existed (tests, older callers) mean the defaults."""
     return getattr(args, "pattern", "*.tif"), int(getattr(args, "rot90_k", 0))
 
 
 def _frame_order(args: argparse.Namespace) -> str:
     """How raw files are ordered (wfci.io.sorted_frame_files). getattr: namespaces
-    built before the option existed mean the 2026 default, ``"name"``."""
+    built before the option existed mean the default, ``"name"``."""
     return getattr(args, "frame_order", "name")
 
 
@@ -586,9 +578,8 @@ def _dump_region(cfg, args: argparse.Namespace) -> tuple[int, int, int, int] | N
     same anatomy, not the same camera pixels, so dumps from different animals are
     directly comparable. Here it is anchored to this recording's own Bregma.
 
-    Every ROI box is then checked to lie inside it. All 356 files in
-    roi_sets\\rebuilt satisfy the configured window by construction (it is their
-    measured union), but a different --roi-set could put a box outside it, and a
+    Every ROI box is then checked to lie inside it. The default window holds the
+    cortex22 boxes at the usual scales, but a ROI set can put a box outside it, and a
     dump that silently clipped away a box the correlations are computed from
     would be worse than no dump at all.
     """
@@ -663,7 +654,7 @@ def _remove_labelled_outputs(out_dir: str, args: argparse.Namespace) -> list[str
 
     Those files carry GCaMP/emo labels the recording cannot support, and scripts
     that find recordings by file name would otherwise keep using them. The
-    BL-pedestal caches are left in place (CLAUDE.md 9.72). Returns what was removed.
+    BL-pedestal caches are left in place. Returns what was removed.
     """
     suffix = "debug" if args.debug else "full"
     dump_dir = _dump_dir(out_dir, args)
@@ -724,7 +715,7 @@ def _dump_in_memory(dump: PixelDump, trial, profile) -> None:
 
 def _decision_config(args: argparse.Namespace) -> ChannelDecisionConfig:
     """Channel-decision thresholds from the run options. getattr: namespaces built
-    before these options existed (tests, older callers) get the spec defaults."""
+    before these options existed (tests, older callers) get the defaults."""
     return ChannelDecisionConfig(
         top_percent=float(getattr(args, "top_percent", 10.0)),
         level_statistic=getattr(args, "level_statistic", "median"),
@@ -747,7 +738,7 @@ def _level_mask_for(cfg, profile, args: argparse.Namespace):
 
 
 def _channel_buffer(args: argparse.Namespace) -> tuple[str, str | None, bool]:
-    """``(channel_buffer, buffer_dir, keep_channel_buffer)`` with the spec defaults."""
+    """``(channel_buffer, buffer_dir, keep_channel_buffer)`` with the defaults."""
     return (getattr(args, "channel_buffer", "auto"), getattr(args, "buffer_dir", None),
             bool(getattr(args, "keep_channel_buffer", False)))
 
@@ -767,7 +758,7 @@ def _debug_trial(folders: list[str], rec_names: list[str], configured: list[str]
                  profile, args: argparse.Namespace, merged: bool, level_mask_for=None):
     """In-memory (debug) trial: load the first N frames per channel, decide, label.
 
-    The decision uses only the frames loaded (spec, "--debug"), trimmed and
+    The decision uses only the frames loaded (as in "--debug"), trimmed and
     half-resolution like a full run. A single recording loads ``debug_frames``
     frames per channel and lets the profile trim them; a merged run loads
     ``debug_frames`` POST-trim frames per block and concatenates them, exactly as
@@ -955,7 +946,7 @@ def _save_outputs(result, out_dir: str, args: argparse.Namespace, cfg, profile,
 
     if args.debug:
         # Smoke tests are read by eye, so print the whole matrix. A full batch runs
-        # hundreds of jobs and the matrices are in the .npz -- dumping 355 of them
+        # hundreds of jobs and the matrices are in the .npz -- dumping hundreds of them
         # would bury the log, so there only the single-number handle is printed.
         print(f"R_mean ({profile.n_rois}x{profile.n_rois}), ROI order {labels}:")
         print(np.array2string(result.R_mean, precision=4, suppress_small=True))
@@ -999,9 +990,9 @@ def _npz_name(args: argparse.Namespace) -> str:
 def _job_is_complete(job: dict[str, Any], args: argparse.Namespace) -> bool:
     """Has this job already produced everything the CURRENT flags ask for?
 
-    The .npz alone is not the answer once ``--save-data`` is on. Every recording
-    in this study already has its .npz, so keying resume on that file would skip
-    all 355 jobs and write no pixels at all -- the flag would appear to work and
+    The .npz alone is not the answer once ``--save-data`` is on. Keying resume on
+    that file would skip every recording that already has its .npz and write no
+    pixels at all -- the flag would appear to work and
     produce nothing. A job counts as done only if the dump sidecar is there too;
     ``PixelDump.close`` writes it last, so its presence means the volumes were
     finished rather than interrupted halfway.
@@ -1266,8 +1257,8 @@ def _check_dump_space(jobs: list[dict[str, Any]], args: argparse.Namespace) -> N
             r0, r1, c0, c1 = args.save_data_window
             n_px = (r1 - r0) * (c1 - c0)
         else:
-            # The whole final grid: the job's ROI set records it (152x128 for the
-            # rotated 2022 frames); 128x128 when there is none.
+            # The whole final grid: the job's ROI set records it (e.g. 152x128 for
+            # rotated frames); 128x128 when there is none.
             roi_set = _quiet_roi_set(row, args, job["rec_names"][0])
             rows, cols = load_roi_set(roi_set)[0].grid if roi_set else (128, 128)
             n_px = rows * cols

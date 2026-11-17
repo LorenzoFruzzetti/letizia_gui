@@ -1,8 +1,8 @@
-"""Step definitions, prerequisites and status read from files on disk (gui_spec.md 5).
+"""Step definitions, prerequisites and status read from files on disk.
 
 Status is never stored by the GUI: every call recomputes it from the cohort's files,
 so opening a cohort shows what is really there, including stale outputs left by an
-earlier run (HANDOFF_2023_rerun.md). The job history only adds "last run" notes.
+earlier run. The job history only adds "last run" notes.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ folder, the tests pass, the raw-data disk is plugged in and the dump disk has en
 <p><b>Run checks</b> tests the environment (a minute; add the test suite for a few more).
 <b>Repair</b> runs <code>setup_env.ps1</code>, which installs only what is missing.</p>
 <p>The very first install must be done by hand: open PowerShell in
-<code>letizia_refactoring</code> and run <code>.\\setup_env.ps1</code>.</p>"""),
+the repository folder and run <code>.\\env\\setup_env.ps1</code>.</p>"""),
     StepDef("scan", "1", "Scan raw folders", ("setup",), """
 <h3>1 · Scan the raw folders</h3>
 <p>Lists every recording folder of the cohort, checks it is complete, and writes the
@@ -70,7 +70,7 @@ you map two names to the same animal. <b>Trust the folders, not the file names</
     StepDef("acquisition", "2", "Acquisition facts", ("scan",), """
 <h3>2 · Acquisition facts</h3>
 <p>Values that silently change every result if wrong: the <b>frame rate per channel</b>
-(2026 cohort: 10 Hz; 2022-2024: 25 Hz), whether frame numbers are zero-padded
+(for example 10 Hz or 25 Hz), whether frame numbers are zero-padded
 (<b>frame order</b>), the onset trim, the image rotation and the grid.</p>
 <p><b>Read facts</b> reads them from the TIFF headers and file names of one recording per
 session (also the LED settings in the file names: a change of LED setting between sessions
@@ -459,7 +459,7 @@ def read_setup_result(config_dir: Path) -> dict | None:
 
 
 def history_notes(history: list[dict]) -> dict[str, str]:
-    """'last run ... (failed)' per step from the job history (spec 7)."""
+    """'last run ... (failed)' per step from the job history."""
     notes = {}
     for record in history:
         when = record.get("end") or record.get("start") or ""

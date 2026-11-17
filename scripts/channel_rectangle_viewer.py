@@ -1,6 +1,6 @@
 """Interactive midline-rectangle viewer: which interleaved group (odd / even) is GCaMP?
 
-Spec: channel_rectangle_viewer_spec.md (repo root). Lab script only; `wfci` is not touched.
+Lab script only; `wfci` is not touched.
 
 The odd and even mean images of one recording are shown side by side ("odd" | "even",
 no channel label, to avoid bias), with a rectangle drawn along the Bregma-Lambda axis
@@ -9,7 +9,7 @@ shows more vessel contrast in that strip than GCaMP. The top bar shows which par
 each system calls GCaMP:
 
     library    the pixel cache's `channel_order` (pixels_meta_full.npz, ROI-union median)
-    manifest   manifests/channel_assignment_2024.csv (whole-frame median)
+    manifest   an optional channel-assignment table (whole-frame median)
     rectangle  live, from the current rectangle and statistic on the two mean images
 
 Geometry (256 grid, continuous coordinates, pixel (r, c) covers [r, r+1) x [c, c+1)):
@@ -20,15 +20,16 @@ Rotation is locked to the axis. Parameters are factors of d, so one saved set ap
 to every recording at its own scale.
 
 Inputs (defaults in RUN_CONFIG, all relative to the repo root):
-    pixel_data_2024/<day>_<unit>/<t#>/pixels_meta_full.npz   mean_f, mean_r, channel_order, ...
+    <pixel_root>/<day>_<unit>/<t#>/pixels_meta_full.npz      mean_f, mean_r, channel_order, ...
     roi_sets/rebuilt/<day>_<unit>_<t#>.yaml                   Bregma, Lambda offset, angle, flip
-    manifests/channel_assignment_2024.csv                     recording_key -> channel_order
-                                                              ('none': no table, column unassigned)
+    <assignment>.csv                                          recording_key -> channel_order
+                                                              ('none', the default: no table,
+                                                              column unassigned)
 Rule and default parameters: channel_rectangle.py (defaults = the params.json below).
 Output: outputs/channel_rectangle/params.json (Save) =
     {length_factor, width_factor, start_offset_factor, statistic}
 
-Run (wfci_gui env; CLAUDE.md 9.17: always through conda run):
+Run (wfci_gui env; always through conda run, the env's python.exe alone cannot load numpy's BLAS):
     & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run -n wfci_gui python scripts/channel_rectangle_viewer.py
 or press Run in the editor (RUN_CONFIG below). CLI flags override RUN_CONFIG.
 
@@ -65,13 +66,12 @@ from qtkit.qt import QtCore, QtWidgets  # noqa: E402
 
 # Edit this section to run the viewer without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "day": "240118",  # 2024 cohort day 3 (build_design_2024.py: 240115 + 3)
-    "units": ["SP20_000", "SP20_R00", "SP20_RR0", "SP20_RRR",
-              "SP21_000", "SP21_R00", "SP21_RR0", "SP21_RRR"],
+    "day": None,      # <yymmdd> session folder prefix (or pass --day)
+    "units": [],      # animal folder names of that session (or pass --units)
     "recordings": ["t1", "t2", "t3", "t4", "t5"],
-    "pixel_root": "pixel_data_2024",
+    "pixel_root": "pixel_data",
     "roi_set_dir": "roi_sets/rebuilt",
-    "assignment": "manifests/channel_assignment_2024.csv",
+    "assignment": "none",  # channel-assignment table, or "none" for a cohort without one
     "params": "outputs/channel_rectangle/params.json",
     # Start from params.json when it exists (otherwise the defaults below).
     "load_saved_params": True,
@@ -101,7 +101,7 @@ class Recording:
     bregma: np.ndarray  # (row, col), continuous 256 grid
     lambda_: np.ndarray
     library_order: str  # cache meta channel_order
-    manifest_order: str  # gcamp_first | emo_first | "" (no label); derived for 2023, see below
+    manifest_order: str  # gcamp_first | emo_first | "" (no label); derived for a verdict table, see below
     verdict: str        # cache meta channel_verdict
     level_region: str   # cache meta channel_level_region
 
@@ -111,14 +111,14 @@ def resolve(path: str | Path) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
-def manifest_order_2023(row: pd.Series, odd: np.ndarray, even: np.ndarray) -> str:
-    """channel_order from a CLAUDE.md 9.67 row (manifests/channel_assignment_2023.csv).
+def manifest_order_from_verdict(row: pd.Series, odd: np.ndarray, even: np.ndarray) -> str:
+    """channel_order from a row of a verdict table (verdict + f_over_r_full_field).
 
-    That file has no channel_order: `verdict` (correct / swapped / inseparable) is relative
-    to the OCTOBER dumps' labelling, which later reruns changed for some recordings (9.71).
+    Such a table has no channel_order: `verdict` (correct / swapped / inseparable) is relative
+    to the labelling of an earlier extraction, which a later rerun may have changed.
     Its `f_over_r_full_field` is median(old mean_f) / median(old mean_r) over the full
     256 image, so comparing it with median(odd) / median(even) of today's images tells
-    which parity the old "f" was (checked: exactly one of the two matches on all 96).
+    which parity the old "f" was (exactly one of the two must match).
     """
     if row["verdict"] == "inseparable":
         return ""
@@ -142,15 +142,15 @@ def manifest_order_2023(row: pd.Series, odd: np.ndarray, even: np.ndarray) -> st
 def load_recordings(args: argparse.Namespace) -> list[Recording]:
     """Read every <day>_<unit>/<t#>: cache meta, ROI set, manifest label. Missing = error.
 
-    The manifest is either a `channel_order` table (2024) or the 2023 9.67 verdict table.
+    The manifest is either a `channel_order` table or a verdict table.
     """
     # "none": a cohort without an assignment table; the manifest column stays unassigned.
     no_manifest = args.assignment is None or str(args.assignment).lower() == "none"
     manifest = (pd.DataFrame(columns=["recording_key", "channel_order"]) if no_manifest else
                 pd.read_csv(resolve(args.assignment), dtype=str, keep_default_na=False))
     manifest = manifest.set_index("recording_key", verify_integrity=True)
-    is_2023_schema = "channel_order" not in manifest.columns
-    if is_2023_schema and not {"verdict", "f_over_r_full_field"} <= set(manifest.columns):
+    is_verdict_schema = "channel_order" not in manifest.columns
+    if is_verdict_schema and not {"verdict", "f_over_r_full_field"} <= set(manifest.columns):
         raise ValueError(f"{args.assignment}: needs channel_order, or verdict + f_over_r_full_field")
     recordings = []
     for unit in args.units:
@@ -158,7 +158,7 @@ def load_recordings(args: argparse.Namespace) -> list[Recording]:
             key = f"{args.day}_{unit}/{name}"
             folder = resolve(args.pixel_root) / f"{args.day}_{unit}" / name
             # A labelled dump has pixels_meta_full.npz; a not-interleaved one only the
-            # odd/even sidecar (CLAUDE.md 9.72). Exactly one of the two must exist.
+            # odd/even sidecar. Exactly one of the two must exist.
             labelled_path = folder / "pixels_meta_full.npz"
             odd_even_path = folder / "pixels_meta_odd_even_full.npz"
             if labelled_path.is_file() == odd_even_path.is_file():
@@ -191,7 +191,7 @@ def load_recordings(args: argparse.Namespace) -> list[Recording]:
                                      bool(roi_set.get("lambda_above_bregma", False))),
                 library_order=library_order,
                 manifest_order=("" if no_manifest else
-                                manifest_order_2023(manifest.loc[key], odd, even) if is_2023_schema
+                                manifest_order_from_verdict(manifest.loc[key], odd, even) if is_verdict_schema
                                 else str(manifest.loc[key, "channel_order"])),
                 verdict=str(meta["channel_verdict"]),
                 # Footer text only; caches written before the region was recorded lack it.
@@ -404,7 +404,7 @@ class ViewerWindow(ShellWindow):
         self.current = row
         recording = self.recordings[row]
         for parity in PARITIES:
-            # Image before any transform (CLAUDE.md 9.33); row-major, 1 px = 1 unit.
+            # Image before any transform; row-major, 1 px = 1 unit.
             self.images[parity].setImage(getattr(recording, parity), autoLevels=False)
             markers = getattr(self, f"markers_{parity}")
             markers.setData(

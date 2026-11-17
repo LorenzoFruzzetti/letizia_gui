@@ -1,4 +1,4 @@
-"""Parameter presets (gui_spec.md section 6).
+"""Parameter presets.
 
   * Per job: ``presets/<job>/<name>.json`` holds the overrides only, plus the sha256 of the
     script they were made for. Loading one made for a different script version warns.

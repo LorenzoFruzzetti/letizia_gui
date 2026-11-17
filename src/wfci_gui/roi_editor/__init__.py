@@ -1,4 +1,4 @@
-"""ROI editor with odd | even panels (roi_editor_spec.md; gui_spec.md section 10 for the shell).
+"""ROI editor with odd | even panels, in a qtkit shell window.
 
 Run with ``python -m wfci_gui.roi_editor`` (see ``__main__.py``). ``model.py`` and
 ``sources.py`` are Qt-free: the model re-implements the old editor's edits with the same

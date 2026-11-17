@@ -1,4 +1,4 @@
-"""The ROI editor window (src/wfci_gui/roi_editor, roi_editor_spec.md), headless.
+"""The ROI editor window (src/wfci_gui/roi_editor), headless.
 
 Equivalence with the old editor through the window's own actions is checked here; the
 model-level equivalence of every edit is tests/test_roi_editor_model.py.
@@ -31,7 +31,7 @@ from wfci_gui.roi_editor.model import PageModel, bregma_128, lambda_128  # noqa:
 from wfci_gui.roi_editor.window import EditorWindow, drop_conflicting_overrides  # noqa: E402
 
 GRID = (128, 128)
-KEYS = ("240101_M1_t1", "240101_M1_t2", "240104_M1_t1")
+KEYS = ("210101_M1_t1", "210101_M1_t2", "210104_M1_t1")
 HEADER = ("day,animal,group,n_recordings,recordings,total_frames,bregma_row,bregma_col,profile,"
           "channel_order,animal_path,recording_paths\n")
 
@@ -63,7 +63,7 @@ def make_args(roi_set_dir: Path):
 
 
 def refuse_dialogs(monkeypatch):
-    # A modal dialog never returns offscreen: make any of them an error (CLAUDE.md 9.74).
+    # A modal dialog never returns offscreen: make any of them an error.
     def refuse(*args, **kwargs):
         raise AssertionError(f"a modal dialog opened in a headless test: {args[1:3]}")
     for name in ("question", "information", "warning", "critical", "about"):
@@ -119,13 +119,13 @@ def test_rebuild_sources_take_the_whole_session(tmp_path):
     rebuilt.mkdir()
     for key in KEYS:
         (reviewed / f"{key}.yaml").write_text("x", encoding="utf-8")
-    # Only 240104_M1_t1 has an up-to-date rebuilt copy.
-    (rebuilt / "240104_M1_t1.yaml").write_text("x", encoding="utf-8")
-    os.utime(rebuilt / "240104_M1_t1.yaml", (2e9, 2e9))
+    # Only 210104_M1_t1 has an up-to-date rebuilt copy.
+    (rebuilt / "210104_M1_t1.yaml").write_text("x", encoding="utf-8")
+    os.utime(rebuilt / "210104_M1_t1.yaml", (2e9, 2e9))
     sources_ = logic.rebuild_sources(list(KEYS), reviewed, rebuilt)
-    assert [p.name for p in sources_] == ["240101_M1_t1.yaml", "240101_M1_t2.yaml"]
-    (rebuilt / "240101_M1_t1.yaml").write_text("x", encoding="utf-8")
-    os.utime(rebuilt / "240101_M1_t1.yaml", (2e9, 2e9))
+    assert [p.name for p in sources_] == ["210101_M1_t1.yaml", "210101_M1_t2.yaml"]
+    (rebuilt / "210101_M1_t1.yaml").write_text("x", encoding="utf-8")
+    os.utime(rebuilt / "210101_M1_t1.yaml", (2e9, 2e9))
     assert len(logic.rebuild_sources(list(KEYS), reviewed, rebuilt)) == 2
 
 
@@ -197,9 +197,9 @@ def write_cached_manifest(tmp_path: Path) -> tuple[Path, logic.EditorSettings]:
     (reviewed / "alignment_images").mkdir(parents=True)
     rows = []
     for animal, t in (("A", "t0"), ("A", "t1"), ("B", "t0")):
-        tifffile.imwrite(reviewed / "alignment_images" / f"230711_{animal}_{t}.tif",
+        tifffile.imwrite(reviewed / "alignment_images" / f"200711_{animal}_{t}.tif",
                          np.random.default_rng(len(animal + t)).random(GRID).astype(np.float32))
-        rows.append(f"230711,{animal},P,1,{t},0,120,134,cortical_gsr,gcamp_first,x,{tmp_path / 'gone' / t}")
+        rows.append(f"200711,{animal},P,1,{t},0,120,134,cortical_gsr,gcamp_first,x,{tmp_path / 'gone' / t}")
     manifest = tmp_path / "rectangle_manifest.csv"
     manifest.write_text(HEADER + "\n".join(rows) + "\n", encoding="utf-8")
     settings = logic.make_settings(dict(logic.default_values(), folder=[], roi_set_dir=str(reviewed),
@@ -212,9 +212,9 @@ def test_open_manifest_asks_for_settings_loads_and_goes_to_recent(empty, tmp_pat
     asked = []
     monkeypatch.setattr(empty, "ask_settings", lambda values, need_folder, note: asked.append(note) or settings)
     empty.controller.open_manifest(str(manifest))
-    assert asked and "No cohort file names" in asked[0]           # D10: no cohort names it
+    assert asked and "No cohort file names" in asked[0]           # no cohort names it
     assert empty.stack.currentIndex() == 1
-    assert table_column(empty, "key") == ["230711_A_t0", "230711_A_t1", "230711_B_t0"]
+    assert table_column(empty, "key") == ["200711_A_t0", "200711_A_t1", "200711_B_t0"]
     assert table_column(empty, "manifest") == ["odd"] * 3
     assert empty.registry.actions["file.save"].isEnabled()
     assert empty.model.page.image_source == "legacy" and empty.panels["even"].note.isVisible()
@@ -408,12 +408,12 @@ def test_table_status_filters_and_sorting(window):
     window.status_filter.setCurrentText("saved")
     assert window.proxy.rowCount() == 1
     window.status_filter.setCurrentText("All statuses")
-    window.page_filter.setText("240104")
+    window.page_filter.setText("210104")
     assert window.proxy.rowCount() == 1
     window.page_filter.setText("")
     window.table.sortByColumn(0, QtCore.Qt.DescendingOrder)
     first = window.proxy.mapToSource(window.proxy.index(0, 0)).row()
-    assert window.table_model.frame.iat[first, 0] == "240104_M1_t1"
+    assert window.table_model.frame.iat[first, 0] == "210104_M1_t1"
 
 
 def test_choosing_a_page_in_the_table_carries_nothing_over(window):
@@ -458,7 +458,7 @@ def test_cached_previews_stand_in_for_an_unmounted_raw_drive(tmp_path, monkeypat
     """No raw folder + a cohort without a manifest file: the cohort's cached pages."""
     reviewed = tmp_path / "reviewed"
     (reviewed / "alignment_images").mkdir(parents=True)
-    rows = [("240104", "M1", "t1"), ("240101", "M1", "t2"), ("240101", "M1", "t1")]
+    rows = [("210104", "M1", "t1"), ("210101", "M1", "t2"), ("210101", "M1", "t1")]
     for day, animal, recording in rows[:2]:                 # the third has no cached image
         tifffile.imwrite(reviewed / "alignment_images" / f"{day}_{animal}_{recording}.tif",
                          np.random.default_rng(0).random(GRID).astype(np.float32))
@@ -466,7 +466,7 @@ def test_cached_previews_stand_in_for_an_unmounted_raw_drive(tmp_path, monkeypat
     settings = logic.EditorSettings(folder=(str(tmp_path / "not_mounted"),), roi_set_dir=str(reviewed),
                                     roi_seed_dir=None)
     pages, _args, _profile, preview_only, _notes = sources.pages_from_folders(settings, "cohorts/fake.yaml")
-    assert preview_only and [p.key for p in pages] == ["240101_M1_t2", "240104_M1_t1"]
+    assert preview_only and [p.key for p in pages] == ["210101_M1_t2", "210104_M1_t1"]
     sources.load_images(pages[0], settings)
     assert pages[0].image.shape == GRID and pages[0].image_source == "legacy"
     with pytest.raises(FileNotFoundError, match="raw drive"):

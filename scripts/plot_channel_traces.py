@@ -1,6 +1,6 @@
 """GCaMP and reflectance (emo) channel traces over time, per session folder of a pixel-dump root.
 
-Study script (P2 boundary). For every ``<pixel_root>\\<day>_<animal>\\`` folder it reads each
+Study script. For every ``<pixel_root>\\<day>_<animal>\\`` folder it reads each
 recording's raw-F dumps (``pixels_f_gcamp_full.npy``, ``pixels_f_emo_full.npy``), reduces
 every frame to the mean over the union of that recording's ROI boxes (the same union
 roi_pixel_connectivity.py uses), and writes into ``<day>_<animal>\\plots\\``:
@@ -15,7 +15,7 @@ roi_pixel_connectivity.py uses), and writes into ``<day>_<animal>\\plots\\``:
   * ``channel_traces_t#.png``  one done recording, same layout, % from the recording's own
                                mean; the title carries the tag and the two ROI-union means.
                                The PNG of a skipped recording is deleted, not redrawn.
-  * ``channel_means.csv``      recording, mean_gcamp, mean_emo, channel_verdict, vs_967.
+  * ``channel_means.csv``      recording, mean_gcamp, mean_emo, channel_verdict, vs_verdict.
                                Skipped recordings get a row with empty means and
                                channel_verdict ``not_interleaved``.
 
@@ -27,33 +27,32 @@ stored order: per done recording, the level of each stored volume is the median 
 frames of its per-frame median over the ROI-union pixels, and the dimmer one is called
 GCaMP (the pipeline rule, ``wfci.io.decide_channel_order``). Where that disagrees with
 the stored ``channel_order`` the two traces are swapped and the tag gets
-``relabelled roi_union``; ``vs_967`` is computed for the plotted order. Output goes to
+``relabelled roi_union``; ``vs_verdict`` is computed for the plotted order. Output goes to
 ``<day>_<animal>\\plots_roi_union\\`` (``plots\\`` is untouched) and the CSV gains
 ``stored_order``, ``plotted_order``, ``roi_level_gcamp``, ``roi_level_emo`` (levels of the
 STORED volumes). This approximates the pipeline's ``--channel-level-region roi_union``:
 the cache holds final-grid pixels (2x2 means of the half-res pixels the pipeline takes
 the median over), so a recording with near-equal levels could come out differently.
-The 9.67 count check describes the stored order, so it is not applied in this mode.
+The disagreement count check describes the stored order, so it is not applied in this mode.
 
 Every trace is the full frame rate drawn faint plus a 1 s moving average drawn bold.
-Channels are plotted AS STORED. Since the 2026-11-05 single-read rerun (CLAUDE.md 9.71)
-every dump records its own ``channel_order`` and ``channel_verdict``; the tag is:
+Channels are plotted AS STORED. Every dump of the single-read extraction records its
+own ``channel_order`` and ``channel_verdict``; the tag is:
   * ``certain`` / ``uncertain``  the dump's ``channel_verdict``;
-  * ``, disagrees 9.67``          appended when 9.67 (``--channel-assignment-csv``) made a
+  * ``, disagrees verdict``       appended when a verdict table (``--channel-assignment-csv``) made a
                                   decision and the new ``channel_order`` is not the one it
                                   asks for: ``correct`` -> the OLD order
                                   (``--old-manifest-csv``), ``swapped`` -> the flipped old
                                   order, ``inseparable`` -> no comparison.
-``vs_967`` in the CSV is ``agree`` / ``disagrees`` / ``inseparable``. The total number of
-disagreements over every done recording must equal ``expected_disagreements`` (12 for
-2023, CLAUDE.md 9.71) or the script raises.
+``vs_verdict`` in the CSV is ``agree`` / ``disagrees`` / ``inseparable``. The total number of
+disagreements over every done recording must equal ``expected_disagreements`` (when
+set) or the script raises.
 
 ``--batch-summary-csv`` (status ``done``/``skipped`` and verdict per recording) drives the
 recording list, the tags and the gaps. Passing ``none`` to both ``--batch-summary-csv`` and
-``--old-manifest-csv`` turns tags and gaps off: every ``t#`` folder with dumps is drawn,
-as for the 2024 cohort.
+``--old-manifest-csv`` turns tags and gaps off: every ``t#`` folder with dumps is drawn.
 
-A recording with status ``needs_channel_decision`` (stored by position, CLAUDE.md 9.72) is
+A recording with status ``needs_channel_decision`` (stored by position) is
 drawn like a done one but from ``pixels_f_odd_full.npy`` / ``pixels_f_even_full.npy``,
 named **odd** and **even**, with the alternation and separation in its title. In a mixed
 unit the joined figure shows GCaMP/emo for the done recordings and odd/even for the others,
@@ -61,9 +60,9 @@ each as % from the mean of its own kind. The CSV then gains ``status``, ``mean_o
 ``mean_even``. ``--only-needs-decision`` redraws only the units holding such a recording.
 
 Run:
-    $env:PYTHONPATH = "$PWD\\src;$PWD"
+    $env:PYTHONPATH = "$PWD\\src;$PWD\\scripts"
     & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -u plot_channel_traces.py
-    ... plot_channel_traces.py --pixel-root pixel_data_2024 --batch-summary-csv none --old-manifest-csv none --channel-assignment-csv none --expected-disagreements none
+    ... plot_channel_traces.py --pixel-root pixel_data --batch-summary-csv none --old-manifest-csv none --channel-assignment-csv none --expected-disagreements none
 """
 from __future__ import annotations
 
@@ -87,15 +86,15 @@ REPO_ROOT = Path(__file__).resolve().parent
 
 # Edit this section to run without CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data_2023",
-    "channel_assignment_csv": REPO_ROOT / "manifests" / "channel_assignment_2023.csv",
-    "batch_summary_csv": REPO_ROOT / "outputs" / "botox_2023" / "batch_summary.csv",
-    "old_manifest_csv": REPO_ROOT / "manifests" / "botox_2023_manifest_explicit.csv",
-    "expected_disagreements": 12,  # handoff count for 2023; None skips the check
-    "skipped_gap_frames": 2950,
+    "pixel_root": REPO_ROOT / "pixel_data",
+    "channel_assignment_csv": "none",  # verdict table (recording_key, verdict); "none" = no comparison
+    "batch_summary_csv": REPO_ROOT / "outputs" / "batch_summary.csv",
+    "old_manifest_csv": "none",  # manifest with the OLD per-recording channel_order; "none" = no comparison
+    "expected_disagreements": None,  # None skips the check
+    "skipped_gap_frames": 2950,  # frames drawn for a skipped recording (118 s at 25 Hz)
     # "frame": channels as stored. "roi_union": re-decide the order from the cached
     # ROI-union levels, swap where it differs, write to plots_roi_union\ (see docstring).
-    "level_region": "frame",  # 118 s at 25 Hz, the trimmed length of every done 2023 recording
+    "level_region": "frame",
     "sampling_rate_hz": 25.0,
     "smooth_s": 1.0,
     "workers": 8,
@@ -199,8 +198,8 @@ def write_all_skipped(folder: Path, records: list[dict[str, Any]], plots_dir: st
     span = names[0] if len(names) == 1 else f"{names[0]}-{names[-1]}"
     verdicts = sorted({r["channel_verdict"] for r in records})
     (out / "README.txt").write_text(
-        f"All recordings ({span}) skipped as {'/'.join(verdicts)} in the 2026-11-05 "
-        f"single-read rerun; no dumps, no plots.\n", encoding="utf-8")
+        f"All recordings ({span}) skipped as {'/'.join(verdicts)} in the "
+        f"single-read extraction; no dumps, no plots.\n", encoding="utf-8")
     return f"{folder.name}: all {len(records)} recordings skipped, README.txt written"
 
 
@@ -224,20 +223,20 @@ def check_disk_against_records(folder: Path, records: list[dict[str, Any]]) -> N
 
 
 def make_tag(record: dict[str, Any]) -> str:
-    """Title tag: verdict (when tags are on), then the relabel and 9.67 notes."""
+    """Title tag: verdict (when tags are on), then the relabel and verdict-table notes."""
     parts = [record["channel_verdict"]] if record["show_verdict"] else []
     if record["status"] == NEEDS_DECISION:
         parts.append(f"alternation {float(record['alternation']):+.2f}, "
                      f"separation {float(record['separation']):.1f}")
     if record.get("relabelled"):
         parts.append("relabelled roi_union")
-    if record["vs_967"] == "disagrees":
-        parts.append("disagrees 9.67")
+    if record["vs_verdict"] == "disagrees":
+        parts.append("disagrees verdict")
     return ", ".join(parts)
 
 
 def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
-    """Draw one unit. Returns (log line, relabelled keys, keys disagreeing with 9.67)."""
+    """Draw one unit. Returns (log line, relabelled keys, keys disagreeing with the verdict table)."""
     started = time.perf_counter()
     folder = Path(job["folder"])
     rate, n_smooth = job["sampling_rate_hz"], max(1, round(job["smooth_s"] * job["sampling_rate_hz"]))
@@ -253,7 +252,7 @@ def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
 
     out = folder / job["plots_dir"]
     out.mkdir(exist_ok=True)
-    # A skipped recording keeps no per-recording PNG: the October one would be stale.
+    # A skipped recording keeps no per-recording PNG: one from an earlier run would be stale.
     for r in skipped:
         (out / f"channel_traces_{r['recording']}.png").unlink(missing_ok=True)
 
@@ -267,7 +266,7 @@ def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
             # dimmer-is-GCaMP the labels swap (equal levels keep the stored order).
             traces = {"gcamp": traces["emo"], "emo": traces["gcamp"]}
             r["relabelled"], r["plotted_order"] = True, FLIP[r["order"]]
-            r["vs_967"] = compare_967(r["plotted_order"], r["verdict_967"], r["old_order"])
+            r["vs_verdict"] = compare_to_table(r["plotted_order"], r["table_verdict"], r["old_order"])
         r["tag"] = make_tag(r)
         means = {c: float(tr.mean()) for c, tr in traces.items()}
         traces_by_rec[r["recording"]], means_by_rec[r["recording"]] = traces, means
@@ -286,7 +285,7 @@ def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
 
     with open(out / "channel_means.csv", "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        header = ["recording", "mean_gcamp", "mean_emo", "channel_verdict", "vs_967"]
+        header = ["recording", "mean_gcamp", "mean_emo", "channel_verdict", "vs_verdict"]
         if roi_mode:
             header += ["stored_order", "plotted_order", "roi_level_gcamp", "roi_level_emo"]
         if has_unassigned:
@@ -300,7 +299,7 @@ def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
         for r in records:
             means = means_by_rec.get(r["recording"])
             row = [r["recording"], cell(means, "gcamp"), cell(means, "emo"),
-                   r["channel_verdict"], r["vs_967"]]
+                   r["channel_verdict"], r["vs_verdict"]]
             if roi_mode:
                 # Levels are those of the STORED volumes (stored_order labels).
                 levels = r.get("roi_levels")
@@ -353,13 +352,13 @@ def plot_folder(job: dict[str, Any]) -> tuple[str, list[str], list[str]]:
     fig.savefig(out / "channel_traces.png", dpi=120)
     plt.close(fig)
     relabelled = [f"{folder.name}/{r['recording']}" for r in done if r.get("relabelled")]
-    disagreeing = [f"{folder.name}/{r['recording']}" for r in done if r["vs_967"] == "disagrees"]
+    disagreeing = [f"{folder.name}/{r['recording']}" for r in done if r["vs_verdict"] == "disagrees"]
     return (f"{folder.name}: {len(done)} done, {len(skipped)} skipped, {len(relabelled)} relabelled "
             f"in {time.perf_counter() - started:.1f}s"), relabelled, disagreeing
 
 
-def read_967(path: Any) -> dict[str, str]:
-    """9.67 verdict per recording_key ('<day>_<animal>/t#'): correct / swapped / inseparable."""
+def read_verdict_table(path: Any) -> dict[str, str]:
+    """Verdict-table verdict per recording_key ('<day>_<animal>/t#'): correct / swapped / inseparable."""
     if is_none(path):
         return {}
     with open(path, newline="", encoding="utf-8") as fh:
@@ -400,27 +399,27 @@ def read_summary(path: Any) -> dict[str, list[dict[str, str]]]:
     return units
 
 
-def lookup_967(key: str, verdicts_967: dict[str, str],
+def lookup_table_verdict(key: str, table_verdicts: dict[str, str],
                old_orders: dict[str, str]) -> tuple[str, str]:
-    """(9.67 verdict, OLD order) for one recording; ('', '') when the comparison is off."""
-    if not verdicts_967 or not old_orders:
+    """(verdict-table verdict, OLD order) for one recording; ('', '') when the comparison is off."""
+    if not table_verdicts or not old_orders:
         return "", ""
-    return verdicts_967[key], old_orders[key]
+    return table_verdicts[key], old_orders[key]
 
 
-def compare_967(new_order: str, verdict_967: str, old_order: str) -> str:
-    """'agree' / 'disagrees' / 'inseparable' against 9.67; '' when the comparison is off."""
-    if not verdict_967 or not old_order:
+def compare_to_table(new_order: str, table_verdict: str, old_order: str) -> str:
+    """'agree' / 'disagrees' / 'inseparable' against the verdict table; '' when the comparison is off."""
+    if not table_verdict or not old_order:
         return ""
-    if verdict_967 == "inseparable":
+    if table_verdict == "inseparable":
         return "inseparable"
-    intended = {"correct": old_order, "swapped": FLIP[old_order]}[verdict_967]
+    intended = {"correct": old_order, "swapped": FLIP[old_order]}[table_verdict]
     return "agree" if new_order == intended else "disagrees"
 
 
 def build_records(pixel_root: Path, args: argparse.Namespace) -> dict[str, list[dict[str, Any]]]:
-    """Per unit: one record per recording (status, verdict, vs_967, tag), numeric t# order."""
-    verdicts_967 = read_967(args.channel_assignment_csv)
+    """Per unit: one record per recording (status, verdict, vs_verdict, tag), numeric t# order."""
+    table_verdicts = read_verdict_table(args.channel_assignment_csv)
     old_orders = read_old_orders(args.old_manifest_csv)
     units: dict[str, list[dict[str, Any]]] = {}
 
@@ -434,13 +433,13 @@ def build_records(pixel_root: Path, args: argparse.Namespace) -> dict[str, list[
             units[folder.name] = []
             for rec in recs:
                 meta = read_meta_channel(rec)
-                verdict_967, old_order = lookup_967(f"{folder.name}/{rec.name}",
-                                                    verdicts_967, old_orders)
+                table_verdict, old_order = lookup_table_verdict(f"{folder.name}/{rec.name}",
+                                                    table_verdicts, old_orders)
                 units[folder.name].append(dict(
                     recording=rec.name, status="done", channel_verdict=meta["channel_verdict"],
-                    show_verdict=False, order=meta["channel_order"], verdict_967=verdict_967,
+                    show_verdict=False, order=meta["channel_order"], table_verdict=table_verdict,
                     old_order=old_order,
-                    vs_967=compare_967(meta["channel_order"], verdict_967, old_order)))
+                    vs_verdict=compare_to_table(meta["channel_order"], table_verdict, old_order)))
         return units
 
     for unit, rows in read_summary(args.batch_summary_csv).items():
@@ -449,13 +448,13 @@ def build_records(pixel_root: Path, args: argparse.Namespace) -> dict[str, list[
             key = f"{unit}/{row['recording']}"
             record = dict(recording=row["recording"], status=row["status"],
                           channel_verdict=row["channel_verdict"], show_verdict=True,
-                          vs_967="", order="")
+                          vs_verdict="", order="")
             if row["status"] == NEEDS_DECISION:
                 meta = read_meta_channel(pixel_root / unit / row["recording"], NEEDS_DECISION)
                 if meta["channel_verdict"] != row["channel_verdict"]:
                     raise ValueError(f"{key}: dump verdict {meta['channel_verdict']!r} != "
                                      f"batch_summary {row['channel_verdict']!r}")
-                record.update(order=meta["channel_order"], verdict_967="", old_order="",
+                record.update(order=meta["channel_order"], table_verdict="", old_order="",
                               alternation=meta["channel_alternation"],
                               separation=meta["channel_separation"])
             if row["status"] == "done":
@@ -463,10 +462,10 @@ def build_records(pixel_root: Path, args: argparse.Namespace) -> dict[str, list[
                 if meta["channel_verdict"] != row["channel_verdict"]:
                     raise ValueError(f"{key}: dump verdict {meta['channel_verdict']!r} != "
                                      f"batch_summary {row['channel_verdict']!r}")
-                verdict_967, old_order = lookup_967(key, verdicts_967, old_orders)
-                record.update(order=meta["channel_order"], verdict_967=verdict_967,
+                table_verdict, old_order = lookup_table_verdict(key, table_verdicts, old_orders)
+                record.update(order=meta["channel_order"], table_verdict=table_verdict,
                               old_order=old_order,
-                              vs_967=compare_967(meta["channel_order"], verdict_967, old_order))
+                              vs_verdict=compare_to_table(meta["channel_order"], table_verdict, old_order))
             units[unit].append(record)
     return units
 
@@ -475,13 +474,13 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--pixel-root", type=Path, default=RUN_CONFIG["pixel_root"])
     p.add_argument("--channel-assignment-csv", default=RUN_CONFIG["channel_assignment_csv"],
-                   help="9.67 verdicts (recording_key, verdict); 'none' to skip.")
+                   help="Verdict table (recording_key, verdict); 'none' to skip.")
     p.add_argument("--batch-summary-csv", default=RUN_CONFIG["batch_summary_csv"],
                    help="status + channel_verdict per recording; 'none' turns tags and gaps off.")
     p.add_argument("--old-manifest-csv", default=RUN_CONFIG["old_manifest_csv"],
                    help="Manifest with the OLD per-recording channel_order; 'none' to skip.")
     p.add_argument("--expected-disagreements", default=RUN_CONFIG["expected_disagreements"],
-                   help="Raise unless exactly this many done recordings disagree with 9.67; "
+                   help="Raise unless exactly this many done recordings disagree with the verdict table; "
                         "'none' to skip.")
     p.add_argument("--level-region", choices=("frame", "roi_union"),
                    default=RUN_CONFIG["level_region"],
@@ -491,7 +490,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sampling-rate-hz", type=float, default=RUN_CONFIG["sampling_rate_hz"])
     p.add_argument("--smooth-s", type=float, default=RUN_CONFIG["smooth_s"])
     p.add_argument("--workers", type=int, default=RUN_CONFIG["workers"])
-    p.add_argument("--select", nargs="*", default=None, help="Folder names, e.g. 230711_PV23_000.")
+    p.add_argument("--select", nargs="*", default=None, help="Folder names, e.g. 200101_A1.")
     p.add_argument("--only-needs-decision", action="store_true",
                    help="Redraw only the units holding a needs_channel_decision recording.")
     return p.parse_args()
@@ -501,15 +500,15 @@ def main() -> None:
     args = parse_args()
     units = build_records(args.pixel_root, args)
 
-    # The 9.67 comparison is checked over EVERY done recording, before --select narrows.
+    # The verdict-table comparison is checked over EVERY done recording, before --select narrows.
     disagreeing = [f"{unit}/{r['recording']}" for unit, records in units.items()
-                   for r in records if r["vs_967"] == "disagrees"]
-    print(f"{len(disagreeing)} recordings (stored order) disagree with 9.67: {', '.join(disagreeing)}")
+                   for r in records if r["vs_verdict"] == "disagrees"]
+    print(f"{len(disagreeing)} recordings (stored order) disagree with the verdict table: {', '.join(disagreeing)}")
     roi_mode = args.level_region == "roi_union"
     # The expected count describes the STORED order; roi_union re-labels, so skip it there.
     if (not roi_mode and not is_none(args.expected_disagreements)
             and len(disagreeing) != int(args.expected_disagreements)):
-        raise RuntimeError(f"expected {args.expected_disagreements} recordings disagreeing with 9.67, "
+        raise RuntimeError(f"expected {args.expected_disagreements} recordings disagreeing with the verdict table, "
                            f"found {len(disagreeing)}")
 
     names = sorted(units)
@@ -538,7 +537,7 @@ def main() -> None:
     if roi_mode:
         print(f"{len(relabelled_all)} relabelled by ROI-union level: "
               f"{', '.join(sorted(relabelled_all))}")
-        print(f"{len(disagreeing_plotted)} (plotted order) disagree with 9.67: "
+        print(f"{len(disagreeing_plotted)} (plotted order) disagree with the verdict table: "
               f"{', '.join(sorted(disagreeing_plotted))}")
     print(f"done in {(time.perf_counter() - started) / 60:.1f} min")
 

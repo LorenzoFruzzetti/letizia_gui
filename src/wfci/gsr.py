@@ -1,7 +1,7 @@
 """Global signal regression (GSR) -- remove the brain-wide common signal.
 
 Reproduces the regression half of
-``Antea_scripts/(2)_Global_Signal_Regression_SCRIPT.txt``::
+the cortical MATLAB script ``(2)_Global_Signal_Regression_SCRIPT.txt``::
 
     global_signal = squeeze(nanmean(nanmean(data,1),2));   % one value per frame
     for row = 1:size(data,1)
@@ -56,13 +56,12 @@ rather than a default that might change later:
     Exactly MATLAB's ``nanmean(nanmean(data,1),2)``: the mean down each column of
     the frame, then the mean of those column means. Every column that holds at
     least one valid pixel counts once, however many valid pixels it holds.
-    Verified against the MATLAB chain run on real data (CLAUDE.md 9.37).
+    Verified against the MATLAB chain run on real data.
 ``"pixel"``
     The plain mean over all valid pixels. Equal to ``"column"`` only when every
     column holds the same number of valid pixels (e.g. a mask that removes whole
     columns); for an irregular brain mask or a union of ROI boxes they differ,
-    and on real data the difference moves ROI correlations by up to 0.13. This was
-    the behaviour before 2026-10-05.
+    and on real data the difference noticeably moves ROI correlations.
 """
 
 from __future__ import annotations
@@ -111,8 +110,8 @@ class GSRConfig:
         if self.nan_policy == "per_frame":
             raise NotImplementedError(
                 "nan_policy='per_frame' is reserved but not implemented: a "
-                "time-varying valid set breaks the streaming GSR identity (see "
-                "MERGING_PLAN.md §6.1). Use 'drop_pixel'."
+                "time-varying valid set breaks the streaming GSR identity "
+                "(the invalid set must be static over time). Use 'drop_pixel'."
             )
 
 

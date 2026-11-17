@@ -1,11 +1,11 @@
 """Generic cohort layer -- stack per-animal results, select subsets, difference means.
 
-LIBRARY, not policy (MERGING_PLAN.md P2). **Nothing here knows a group name, an
+LIBRARY, not policy. **Nothing here knows a group name, an
 animal, a condition, a day or a disease model.** It provides mechanism: load
 per-animal connectivity matrices, tag each with whatever metadata the *study*
 defines, select subsets by that metadata, and average or difference them. Which
 animals exist, which group each belongs to, and how they split is the study
-script's business -- see ``experiments/``.
+script's business.
 
 This is the layer MATLAB step (5) corresponds to. There, a group mean was written
 as ``mean(cat(3, <this animal>, <that animal>, ...), 3)`` with every animal in
@@ -175,7 +175,7 @@ def load_results(
 class CohortTable:
     """An ordered collection of :class:`AnimalResult`, selectable by metadata.
 
-    The table itself is the "cohort table" of MERGING_PLAN.md §4.1: a study fills
+    The table itself is the "cohort table": a study fills
     it with per-animal results and whatever columns (metadata keys) it likes, then
     selects and averages subsets. The library never learns what the columns mean.
 

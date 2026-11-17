@@ -1,11 +1,11 @@
-"""Find conda and build the exact subprocess commands every job runs (gui_spec.md D1, 7).
+"""Find conda and build the exact subprocess commands every job runs.
 
 Every job is ``conda.bat run --no-capture-output -n wfci_gui python -u <script> ...``:
   * through ``conda run``, because calling the env's python.exe directly crashes numpy's
-    BLAS (CLAUDE.md 9.17);
-  * with ``--no-capture-output``, because otherwise errors are hidden (9.25);
+    BLAS;
+  * with ``--no-capture-output``, because otherwise errors are hidden;
   * with ``PYTHONPATH=<repo>\\src;<repo>\\scripts``, because the env's editable install may point at
-    another checkout (9.13 / 9.26).
+    another checkout.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 
 ENV_NAME = "wfci_gui"
 # conda.bat is a batch file: cmd.exe re-parses its arguments after the quotes are gone,
-# so these characters would be redirections or variable expansions (CLAUDE.md 9.18, 9.39).
+# so these characters would be redirections or variable expansions.
 CMD_METACHARACTERS = set('%^&|<>"')
 
 
@@ -25,7 +25,7 @@ class CondaNotFound(FileNotFoundError):
 
 
 def conda_candidates(environ: dict[str, str] | None = None) -> list[Path]:
-    """Where conda is looked for, in order (spec 9.1)."""
+    """Where conda is looked for, in order."""
     environ = dict(os.environ if environ is None else environ)
     home = Path(environ.get("USERPROFILE", str(Path.home())))
     candidates = [home / "anaconda3" / "condabin" / "conda.bat",
@@ -62,7 +62,7 @@ def check_arguments(arguments: list[str]) -> None:
         bad = sorted(set(argument) & CMD_METACHARACTERS)
         if bad:
             raise ValueError(f"argument {argument!r} contains {bad}, which cmd.exe re-parses when "
-                             "conda.bat runs (CLAUDE.md 9.18). Use a value without them.")
+                             "conda.bat runs. Use a value without them.")
 
 
 def python_command(conda: Path, arguments: list[str], env_name: str = ENV_NAME) -> list[str]:

@@ -9,7 +9,7 @@ where Fbar/Rbar are each pixel's centred running median over `window_s`
 seconds (`min_periods=1` at the ends). This is exactly the per-pixel quantity
 the pixel event detector (`--signal-mode median_dff`) computes before averaging
 inside a box: averaging the cached volume over a box reproduces its median-dF/F
-ROI trace bit for bit (checked on 260611/PV5/t1). It is a ratio,
+ROI trace bit for bit. It is a ratio,
 not a percentage.
 
 It depends only on F, R and the baseline window, never on detection
@@ -19,12 +19,10 @@ the file name, so a cache built with another window is never read by mistake:
     pixels_median_dff_<window>s_full.npy   (n_time, rows, cols), float16 by default
     pixels_median_dff_<window>s_meta.json  provenance; written LAST, it is the done-marker
 
-float16 vs float32, measured on 260611/PV5/t1 against float64: float16 is
-39.4 MB per recording (~21.5 GB for 545), worst pixel error 6e-5 = 0.25% of
-that pixel's temporal SD, worst ROI-trace error 0.04% of the trace SD, and at
-most 2 of 396 pixels change active/inactive in any frame at a 1-SD threshold.
-float32 is 78.8 MB (~43 GB) and effectively exact (7e-9). Values span about
--0.07..0.14, far inside float16's +-65504, and the cast is range-checked anyway.
+float16 vs float32: float16 is half the size, and its rounding error is a small
+fraction of a pixel's temporal SD, so ROI traces and thresholded maps are
+practically unchanged. float32 is effectively exact. A median-dF/F ratio stays
+far inside float16's +-65504, and the cast is range-checked anyway.
 
 Interruption is safe: the volume is written to a temporary name and renamed,
 and the meta JSON is written after it, so a recording without its JSON is
@@ -64,9 +62,8 @@ RUN_CONFIG: dict[str, Any] = {
     "window_s": 20.0,  # Running-median baseline, seconds (20 s = 201 frames at 10 Hz).
     "sampling_rate_hz": 10.0,  # Per-channel frame rate of the dumps.
     "dtype": "float16",  # "float16" (half the disk) or "float32" (exact); see the docstring.
-    # Parallel processes; 1 runs serially in this process. Measured on this machine
-    # (i7-14700, 32 GB): 1 -> 107 min, 4 -> 29, 8 -> 21, 12 -> 17, 20 -> 13 min for
-    # 545 recordings; ~1.1 GB RAM per worker. 8 leaves the machine usable meanwhile.
+    # Parallel processes; 1 runs serially in this process. About 1.1 GB RAM per worker;
+    # more workers help up to about the core count, and 8 leaves a desktop usable meanwhile.
     "workers": 8,
     "recording_limit": None,  # None: all dumps; positive integer: only the first N (smoke test).
     "overwrite": False,  # True: recompute even when a finished cache exists.
@@ -228,7 +225,7 @@ def main():
             report(i_job, build_one(job))
     else:
         # Pool's context exit calls terminate(), so Ctrl+C or a worker error stops
-        # every worker instead of waiting for the queue (the trap in CLAUDE.md 9.10).
+        # every worker instead of waiting for the queue.
         with Pool(processes=min(args.workers, len(jobs))) as pool:
             for i_job, result in enumerate(pool.imap_unordered(build_one, jobs, chunksize=1), start=1):
                 report(i_job, result)

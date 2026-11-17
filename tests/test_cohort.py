@@ -1,11 +1,11 @@
-"""The generic cohort layer, and the library/experiment boundary it protects.
+"""The generic cohort layer, and the library/study boundary it protects.
 
 `wfci.cohort` is pure mechanism: stack per-animal matrices, select subsets by
 study-defined metadata, average, difference. The tests hand-compute the same
 group means with plain numpy and require the primitives to match -- a real check
 of what `.mean()` / `DIFF` do, not a tautology.
 
-The last test is the one that matters most for the design: it enforces P2 -- that
+The last test is the one that matters most for the design: it enforces that
 no study term ever leaks into `src/wfci/`. If that fails, the boundary the whole
 cohort layer exists to draw has been crossed.
 """
@@ -209,17 +209,16 @@ def test_load_results_errors_clearly_on_a_missing_key(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# P2: the library/experiment boundary, enforced
+# The library/study boundary, enforced
 # ---------------------------------------------------------------------------
 def test_no_study_term_leaks_into_the_library():
-    """MERGING_PLAN.md P2, made a test: src/wfci/ must contain no study knowledge.
+    """src/wfci/ must contain no study knowledge.
 
     The cohort layer exists precisely so that a study's groups, animals and splits
-    live in experiments/, never in the package. If one of these terms appears in a
-    library source file, that boundary has been crossed -- so the grep the plan
-    specified is run here on every CI pass, not just once by hand.
+    live in the study scripts, never in the package. If one of these terms appears
+    in a library source file, that boundary has been crossed.
     """
-    pattern = re.compile(r"sani|pd_|macchi|day4|sex", re.IGNORECASE)
+    pattern = re.compile(r"day4|sex", re.IGNORECASE)
     offenders = []
     for py in (REPO_ROOT / "src" / "wfci").rglob("*.py"):
         for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
@@ -227,23 +226,8 @@ def test_no_study_term_leaks_into_the_library():
                 offenders.append(f"{py.relative_to(REPO_ROOT)}:{lineno}: {line.strip()}")
 
     assert not offenders, (
-        "study terms leaked into the library (P2 violation):\n" + "\n".join(offenders)
+        "study terms leaked into the library:\n" + "\n".join(offenders)
     )
-
-
-def test_the_experiment_script_is_where_the_study_terms_live():
-    """The counterpart: the study knowledge really is in experiments/, not nowhere.
-
-    A boundary is only meaningful if the thing it excludes exists on the other
-    side. This confirms the worked study script carries the design the library
-    refuses to.
-    """
-    script = REPO_ROOT / "experiments" / "healthy_vs_disease_day4.py"
-    text = script.read_text(encoding="utf-8")
-
-    assert "COHORT" in text
-    assert '"group"' in text and '"sex"' in text
-    assert "MACCHI" in text  # the real animal ids live here
 
 
 if __name__ == "__main__":

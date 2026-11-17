@@ -1,7 +1,7 @@
 """Brain-mask stage -- restrict the analysis to pixels inside the brain.
 
 Reproduces the masking half of
-``Antea_scripts/(2)_Global_Signal_Regression_SCRIPT.txt``::
+the cortical MATLAB script ``(2)_Global_Signal_Regression_SCRIPT.txt``::
 
     Mask_resized = imresize(Mask, 0.5, 'box');
     for i = 1:size(Mask_resized,1)

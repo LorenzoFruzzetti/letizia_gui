@@ -1,14 +1,14 @@
 """Pin the ROI atlases to the MATLAB scripts they were transcribed from.
 
-There is no MATLAB reference for the cortical pipeline (MERGING_PLAN.md P4), so
+There is no MATLAB reference for the cortical pipeline, so
 ``CORTEX_22`` rests entirely on 22 boxes having been copied out of a .txt file by
 hand -- 88 integers, each of which is silently plausible if wrong. A transposed
 digit would not crash anything; it would just quietly average the wrong pixels
 and produce a publishable-looking correlation matrix.
 
 So instead of trusting the transcription, this parses the original MATLAB and
-compares. It also re-runs, on every test run, the cross-check that the plan
-called for at transcription time: the Antea scripts define the same 22 boxes
+compares. It also re-runs, on every test run, the cross-check made at
+transcription time: the cortical MATLAB scripts define the same 22 boxes
 TWICE -- once to draw them (script 3) and once to average them (script 4) -- and
 those two copies must agree. The equivalent cerebellar pair HAS drifted in this
 repo, which is why duplication is treated as guilty until proven innocent.
@@ -26,9 +26,9 @@ import pytest
 from wfci.atlases import CEREBELLUM_4, CORTEX_22
 from wfci.config import Box
 
-ANTEA = Path(__file__).resolve().parents[1] / "Antea_scripts"
-SCRIPT_3 = ANTEA / "(3)_FOV128-128_ROIposition.txt"
-SCRIPT_4 = ANTEA / "(4)_FOV128x128_corr_SCRIPT.txt"
+MATLAB_DIR = Path(__file__).resolve().parents[1] / "matlab_cortical"
+SCRIPT_3 = MATLAB_DIR / "(3)_FOV128-128_ROIposition.txt"
+SCRIPT_4 = MATLAB_DIR / "(4)_FOV128x128_corr_SCRIPT.txt"
 
 # img_av(y_1+17 : y_1+22, x_2+37 : x_2+42, :)  -- MATLAB inclusive offset ranges.
 # "y_1-0" appears in the source, hence the sign is captured rather than assumed.

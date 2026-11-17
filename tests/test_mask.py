@@ -52,8 +52,8 @@ def test_apply_mask_does_not_modify_its_input():
 def test_the_invalid_set_is_static_over_time():
     """Every pixel is valid for all frames or none -- never some.
 
-    This is the precondition the streaming GSR path relies on (MERGING_PLAN.md
-    §6.1): under mask-only NaNs the invalid set does not move, so a per-frame
+    This is the precondition the streaming GSR path relies on:
+    under mask-only NaNs the invalid set does not move, so a per-frame
     reduction and a whole-time-series one agree. The mask stage is what
     guarantees it, so it is asserted here at the source.
     """

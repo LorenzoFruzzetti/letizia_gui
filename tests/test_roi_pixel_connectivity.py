@@ -56,7 +56,7 @@ def test_gsr_matches_per_pixel_least_squares():
 
 
 def test_gsr_column_mean_is_antea_nested_nanmean():
-    # Antea's script (2): g = nanmean(nanmean(data,1),2), the mean of the column means.
+    # The MATLAB GSR script: g = nanmean(nanmean(data,1),2), the mean of the column means.
     # On an irregular region (columns holding 1, 2 or 3 pixels) it is not the pixel mean.
     rng = np.random.default_rng(5)
     n_time, n_rows, n_cols = 200, 3, 4

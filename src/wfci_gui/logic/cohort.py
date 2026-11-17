@@ -1,8 +1,8 @@
 """Cohort file (``cohorts/<name>.yaml``) and its three tables: load, validate, save, diff.
 
-gui_spec.md section 4. Rules:
+Rules:
   * unknown keys are rejected on load (a typo must not be silently ignored);
-  * relative paths are relative to ``letizia_refactoring/`` (REPO_ROOT);
+  * relative paths are relative to the repository root (REPO_ROOT);
   * saves are atomic (write a temporary file next to the target, then rename), and the
     GUI shows ``diff_text`` against the file on disk before it saves.
 
@@ -51,7 +51,7 @@ KEY_ORDER = (
 )
 # Acquisition facts (step 2). Every field may be null until step 2 fills it.
 ACQUISITION_KEYS = {
-    "sampling_rate_hz": (int, float),        # per channel (2026: 10, 2022-2024: 25)
+    "sampling_rate_hz": (int, float),        # per channel, e.g. 10 or 25
     "frame_order": (str,),                   # "name" | "number"
     "trim_s": (int, float),                  # onset trim per channel, seconds
     "rot90_k": (int,),
@@ -68,7 +68,7 @@ OVERRIDE_GROUPS = (
     "scan", "facts", "bake", "roi_select", "rebuild", "preflight", "extract", "qc",
     "cache_median", "cache_blpedestal", "design", "connectivity", "stats", "analysis_a",
 )
-RECORDING_KEY_RE = re.compile(r"^\d{6}_[^/\\]+/[^/\\]+$")    # 230714_PV23_000/t3
+RECORDING_KEY_RE = re.compile(r"^\d{6}_[^/\\]+/[^/\\]+$")    # 200101_A1_000/t3
 
 
 class CohortError(ValueError):
@@ -134,7 +134,7 @@ class Cohort:
 
 
 def resolve_path(value: str | Path) -> Path:
-    """Absolute path; relative values are relative to letizia_refactoring/ (spec 4.1)."""
+    """Absolute path; relative values are relative to the repository root."""
     path = Path(value)
     return path if path.is_absolute() else (REPO_ROOT / path)
 
@@ -370,7 +370,7 @@ def read_table(path: str | Path, kind: str) -> pd.DataFrame:
 
 def validate_table(kind: str, frame: pd.DataFrame, timepoints: list[str] | None = None,
                    known_animals: set[str] | None = None) -> list[TableIssue]:
-    """Every problem in the table (spec 4.2); an empty list means it is valid."""
+    """Every problem in the table; an empty list means it is valid."""
     columns = TABLE_COLUMNS[kind]
     missing = [c for c in columns if c not in frame.columns]
     unknown = [c for c in frame.columns if c not in columns]
@@ -400,7 +400,7 @@ def validate_table(kind: str, frame: pd.DataFrame, timepoints: list[str] | None 
                     issues.append(TableIssue(i, f"{column} is empty"))
             if re.fullmatch(r"\d+", str(values["animal"])):
                 issues.append(TableIssue(i, f"animal {values['animal']!r} is all digits; prefix it "
-                                            "(e.g. PV23_000) so no CSV reader turns it into a number"))
+                                            "(e.g. A1_000) so no CSV reader turns it into a number"))
         if kind == "recordings":
             if values["channel_order"] not in CHANNEL_ORDERS:
                 issues.append(TableIssue(

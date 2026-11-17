@@ -1,4 +1,4 @@
-"""The ROI editor's state and every edit, with no Qt (roi_editor_spec.md D1, section 6.4).
+"""The ROI editor's state and every edit, with no Qt.
 
 ``PageModel`` is one recording: a ``roi_editor.Session`` (boxes as Bregma offsets, Bregma,
 Lambda distance / side / angle, the rescale reference and the reset seed) plus the page's
@@ -82,7 +82,7 @@ class PageModel(Session):
     group: str = ""
     channel_order: str = ""                 # the manifest's, "" when the source has none
     # The page's own rectangle (None = params.json's). Not None is the "moved" flag: a
-    # page moved back onto the params.json values still writes the key (spec 5.1).
+    # page moved back onto the params.json values still writes the key.
     rectangle: RectangleFactors | None = None
     seed_rectangle: RectangleFactors | None = None      # what 'r' (reset) returns to
     # The user's call of which parity is GCaMP ("odd" / "even"; None = not chosen). Saved
@@ -289,7 +289,7 @@ class EditorModel:
         target.lambda_sign = source.lambda_sign
         target.lambda_angle = source.lambda_angle
         target.y_1, target.x_2 = source.y_1, source.x_2
-        target.rectangle = source.rectangle         # D19: the rectangle comes along
+        target.rectangle = source.rectangle         # the rectangle comes along
         target.rebase()
         target.dirty = True
         self.selected = None
@@ -555,7 +555,7 @@ class EditorModel:
     def move_rectangle(self, corner, length: float, width: float) -> None:
         """The rectangle dragged in a panel: ``corner`` = its local origin (row, col) and
         ``length`` / ``width`` its size, on the 128 grid. Projected onto the Bregma-Lambda
-        axis and clipped to the parameter limits (D16)."""
+        axis and clipped to the parameter limits."""
         page = self.page
         page.rectangle = factors_from_roi(bregma_128(page), lambda_128(page), corner, length, width)
         page.dirty = True
@@ -591,7 +591,7 @@ class EditorModel:
         """(decision, '') or (None, why there is none) for a page.
 
         Only from the 256-grid means read off the raw frames: a decision from the cached
-        128 images disagreed with the 256-grid one on 27 of 496 recordings (spec 5.3), so
+        128 images disagrees with the 256-grid one too often to be trusted, so
         a cached page has none.
         """
         page = self.page if page is None else page

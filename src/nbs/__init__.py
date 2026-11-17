@@ -6,8 +6,8 @@ null of the maximum component size giving FWER-corrected p-values per component.
 Freedman-Lane handles nuisance covariates, exchange blocks restrict permutations
 for repeated measures, and small designs are enumerated exactly.
 
-Kept separate from ``wfci`` on purpose: ``wfci`` scopes NBS out (MERGING_PLAN.md
-§4.3) and only *ingests* an adjacency (``wfci.significance``). A significant
+Kept separate from ``wfci`` on purpose: ``wfci`` scopes NBS out
+and only *ingests* an adjacency (``wfci.significance``). A significant
 component's ``adjacency`` is exactly that input.
 """
 

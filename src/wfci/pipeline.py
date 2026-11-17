@@ -6,7 +6,7 @@ Ties the stages together::
 
 Step 1 (hemodynamic correction) and step 3 (ROI functional connectivity) are
 common to both wide-field pipelines. The two bracketed stages are optional and
-belong to the cortical pipeline (``Antea_scripts/(2)_..._SCRIPT.txt``); the
+belong to the cortical pipeline (the cortical MATLAB script ``(2)_..._SCRIPT.txt``); the
 cerebellar pipeline simply leaves them off, which is exactly its historical
 behaviour. Step 2 is a visual check and lives in :mod:`wfci.visualize`.
 

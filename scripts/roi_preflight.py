@@ -3,7 +3,7 @@
 extract_cohort.py crops each pixel dump to a Bregma-relative window
 (``save_data_window`` = rows -29..47, cols -44..43 around Bregma) and refuses a box outside
 it only at run time, recording by recording; it never checks that the window itself fits
-the grid before the crop (CLAUDE.md 9.50/9.51). This checks every set of the cohort up
+the grid before the crop. This checks every set of the cohort up
 front, with the batch's own conventions:
 
   * Bregma on the final grid: ``y_1 = bregma_row // 2``, ``x_2 = bregma_col // 2``;
@@ -13,12 +13,12 @@ front, with the batch's own conventions:
     the grid.
 
 A set drawn with Lambda above Bregma (``lambda_above_bregma``) puts V1 at negative rows and
-fails here by design (9.50): the dump window assumes Lambda below.
+fails here by design: the dump window assumes Lambda below.
 
 Writes ``<output_root>/roi_preflight.csv`` (one row per recording) and exits with code 1
 when any recording fails, so the job shows as failed.
 
-    conda run --no-capture-output -n wfci_gui python -u roi_preflight.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u roi_preflight.py --cohort <cohort folder>/cohort.yaml
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ import yaml  # noqa: E402
 from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": r"cohorts\botox_2023.yaml",
+    "cohort": None,  # path to the cohort file (or pass --cohort)
     # Bregma-relative half-open window (rows start, rows end, cols start, cols end); must
     # equal extract_cohort.py's save_data_window.
     "window": [-29, 47, -44, 43],

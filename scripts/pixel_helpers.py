@@ -61,9 +61,9 @@ def recording_roi_set(meta, roi_set_dir=None, *, base_dir):
     `roi_set_dir=None` is the set the dump was made with (`meta["roi_set"]`); a
     relative `meta["roi_set"]` is resolved against `base_dir`.
     Otherwise it is `<roi_set_dir>/<day>_<animal>_<t#>.yaml`, the per-recording
-    file pixel_roi_editor.py writes. A missing file raises instead of falling back
-    to the dump's own set: a silent fallback is how CLAUDE.md 9.4 ran a whole batch
-    on the wrong geometry without anything saying so.
+    file the ROI editor and rebuild_roi_sets.py write. A missing file raises instead of falling back
+    to the dump's own set: a silent fallback would run a whole batch on the wrong
+    geometry without anything saying so.
     The set must share the dump's grid, Bregma and downsample, because box offsets
     are only meaningful relative to the Bregma the pixels were cropped around.
     """

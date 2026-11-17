@@ -26,22 +26,22 @@ def test_project_default_is_reliable_serial_execution():
 
 
 def test_summary_from_npz_recovers_completed_job(tmp_path):
-    out_dir = tmp_path / '260611_PV5' / 't1'
+    out_dir = tmp_path / '200611_A5' / 't1'
     out_dir.mkdir(parents=True)
     np.savez(
         out_dir / 'connectivity_full.npz',
-        day=np.array('260611'),
-        animal=np.array('PV5'),
+        day=np.array('200611'),
+        animal=np.array('A5'),
         group=np.array('P'),
         profile=np.array('cerebellar_rs'),
         bregma=np.array([90, 130]),
-        roi_set=np.array(r'roi_sets\rebuilt\260611_PV5_t1.yaml'),
+        roi_set=np.array(r'roi_sets\rebuilt\200611_A5_t1.yaml'),
         R_mean=np.array([[1.0, 0.25], [0.25, 1.0]]),
     )
     args = argparse.Namespace(debug=False)
     job = {
         'args': args,
-        'row': {'day': '260611', 'animal': 'PV5'},
+        'row': {'day': '200611', 'animal': 'A5'},
         'label': 't1',
         'folders': ['recording-folder'],
         'out_dir': str(out_dir),
@@ -49,7 +49,7 @@ def test_summary_from_npz_recovers_completed_job(tmp_path):
 
     row = batch._summary_from_npz(job)
 
-    assert batch._summary_key(row) == ('260611', 'PV5', 'full', 't1')
+    assert batch._summary_key(row) == ('200611', 'A5', 'full', 't1')
     assert row['bregma_row'] == 90
     assert row['bregma_col'] == 130
     assert row['mean_offdiag_R'] == 0.25
@@ -64,7 +64,7 @@ def test_keyboard_interrupt_terminates_pool_workers(tmp_path, monkeypatch):
         skip_existing=False,
     )
     rows = [{
-        'day': '260611', 'animal': 'PV5', 'group': 'P',
+        'day': '200611', 'animal': 'A5', 'group': 'P',
         'profile': 'cerebellar_rs', 'bregma_row': '90', 'bregma_col': '130',
         'channel_order': 'auto', 'recording_paths': r'input\t1',
     }]
@@ -129,12 +129,12 @@ def test_workers_one_never_constructs_a_process_pool(tmp_path, monkeypatch):
         skip_existing=False,
     )
     rows = [{
-        'day': '260611', 'animal': 'PV5', 'group': 'P',
+        'day': '200611', 'animal': 'A5', 'group': 'P',
         'profile': 'cerebellar_rs', 'bregma_row': '90', 'bregma_col': '130',
         'channel_order': 'auto', 'recording_paths': r'input\t1',
     }]
     summary = dict(
-        day='260611', animal='PV5', group='P', profile='cerebellar_rs',
+        day='200611', animal='A5', group='P', profile='cerebellar_rs',
         bregma_row=90, bregma_col=130, roi_set='', mode='full', recording='t1',
         n_recordings=1, mean_offdiag_R=0.25, elapsed_s=1.0, npz_path='result.npz',
     )
@@ -156,7 +156,7 @@ def test_workers_one_never_constructs_a_process_pool(tmp_path, monkeypatch):
     assert executed == ['t1']
     recovered = batch._read_summary_rows(str(tmp_path / 'batch_summary.csv'))
     assert len(recovered) == 1
-    assert batch._summary_key(recovered[0]) == ('260611', 'PV5', 'full', 't1')
+    assert batch._summary_key(recovered[0]) == ('200611', 'A5', 'full', 't1')
 
 
 def test_save_data_config_reaches_the_namespace_intact():
@@ -167,9 +167,9 @@ def test_save_data_config_reaches_the_namespace_intact():
     until a run reaches the code that reads it -- late, and only when the flag is
     on. Assert the whole set instead.
 
-    The values asserted are this study's configured run: dumps ON, into
-    pixel_data\\ inside the repo (gitignored). If the study's settings change,
-    update them here -- but never drop an assertion, that is the point.
+    The values asserted are the configured defaults: dumps ON, into
+    pixel_data\\. If the defaults change, update them here -- but never drop an
+    assertion, that is the point.
     """
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG, prefer_cli_args=False))
 
@@ -229,7 +229,7 @@ def test_dump_region_refuses_a_box_outside_the_window():
 
 
 def test_configured_window_contains_every_rebuilt_roi_set():
-    """The shipped window is the measured union of all roi_sets\rebuilt boxes.
+    """The shipped window holds every box of the rebuilt ROI sets.
 
     It is a constant in RUN_CONFIG, so nothing stops a future edit to those sets
     from outgrowing it. This test makes that show up here rather than as a
@@ -243,11 +243,8 @@ def test_configured_window_contains_every_rebuilt_roi_set():
     from wfci import ROIConfig
     from wfci.config import Box
 
-    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(batch.__file__))),
-                        'letizia', 'roi_sets', 'rebuilt')
-    if not os.path.isdir(root):
-        root = os.path.join(os.path.dirname(os.path.abspath(batch.__file__)),
-                            'roi_sets', 'rebuilt')
+    root = os.path.join(os.path.dirname(os.path.abspath(batch.__file__)),
+                        'roi_sets', 'rebuilt')
     paths = sorted(glob.glob(os.path.join(root, '*.yaml')))
     if not paths:
         pytest.skip('roi_sets/rebuilt is not present in this checkout')
@@ -258,8 +255,8 @@ def test_configured_window_contains_every_rebuilt_roi_set():
     for path in paths:
         with open(path) as fh:
             doc = yaml.safe_load(fh)
-        # The window belongs to the 128x128 cohorts. The 2022 sets (152x128, rotated
-        # camera) are dumped full-frame by run_botox_2022.py, which sets no window.
+        # The window belongs to 128x128 grids. Sets on another grid (e.g. 152x128,
+        # rotated camera) are dumped full-frame, with no window.
         if doc.get('grid', [grid, grid]) != [grid, grid]:
             continue
         n_checked += 1
@@ -274,18 +271,18 @@ def test_configured_window_contains_every_rebuilt_roi_set():
 
 
 def _job(tmp_path, out_dir):
-    return dict(row={'day': '260611', 'animal': 'PV5'}, args=None,
+    return dict(row={'day': '200611', 'animal': 'A5'}, args=None,
                 folders=['x'], rec_names=['t1'], label='t1', out_dir=str(out_dir))
 
 
 def test_resume_requires_the_dump_when_save_data_is_on(tmp_path):
     """A finished analysis is NOT a finished job once --save-data is added.
 
-    Every recording in this study already has its connectivity_full.npz, so
-    resuming on that marker alone would skip all 355 jobs and write no pixels --
-    the flag would look like it ran and produce nothing.
+    A recording that already has its connectivity_full.npz would be skipped if
+    resume keyed on that marker alone, and no pixels written -- the flag would
+    look like it ran and produce nothing.
     """
-    out_dir = tmp_path / 'out' / '260611_PV5' / 't1'
+    out_dir = tmp_path / 'out' / '200611_A5' / 't1'
     out_dir.mkdir(parents=True)
     (out_dir / 'connectivity_full.npz').write_bytes(b'')
     job = _job(tmp_path, out_dir)
@@ -306,7 +303,7 @@ def test_resume_looks_for_the_dump_under_save_data_root(tmp_path):
     """With the volumes on another disk, resume must look for them there."""
     out_root = tmp_path / 'out'
     dump_root = tmp_path / 'pixels'
-    out_dir = out_root / '260611_PV5' / 't1'
+    out_dir = out_root / '200611_A5' / 't1'
     out_dir.mkdir(parents=True)
     (out_dir / 'connectivity_full.npz').write_bytes(b'')
     job = _job(tmp_path, out_dir)
@@ -315,7 +312,7 @@ def test_resume_looks_for_the_dump_under_save_data_root(tmp_path):
 
     assert batch._job_is_complete(job, args) is False
 
-    mirrored = dump_root / '260611_PV5' / 't1'
+    mirrored = dump_root / '200611_A5' / 't1'
     mirrored.mkdir(parents=True)
     (mirrored / 'pixels_meta_full.npz').write_bytes(b'')
     assert batch._job_is_complete(job, args) is True
@@ -325,13 +322,13 @@ def test_save_data_dtypes_and_root_are_settable_from_the_cli(monkeypatch):
     """The output path and both storage dtypes must be reachable without editing code."""
     monkeypatch.setattr(
         batch.sys, 'argv',
-        ['extract_cohort.py', '--save-data', '--save-data-root', r'D:\pixels',
+        ['extract_cohort.py', '--save-data', '--save-data-root', r'\\nas\pixels',
          '--save-data-dff-dtype', 'float32', '--save-data-f-dtype', 'float16'],
     )
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG))
 
     assert args.save_data is True
-    assert args.save_data_root == r'D:\pixels'
+    assert args.save_data_root == r'\\nas\pixels'
     assert args.save_data_dff_dtype == 'float32'
     assert args.save_data_f_dtype == 'float16'
     # Not a flag: it changes which pixels the array contains, not just where it goes.
@@ -341,13 +338,13 @@ def test_save_data_dtypes_and_root_are_settable_from_the_cli(monkeypatch):
 def test_save_data_root_mirrors_the_output_tree(tmp_path):
     """Volumes land under save_data_root at the same <day>_<animal>\<t#> tail.
 
-    That is what lets ~70 GB of pixels sit on a different disk from the small
+    That is what lets tens of GB of pixels sit on a different disk from the small
     analysis outputs while staying matched up recording by recording.
     """
-    args = argparse.Namespace(output_root=r'outputs\run', save_data_root=r'D:\pixels')
-    out_dir = os.path.join(r'outputs\run', '260611_PV5', 't1')
+    args = argparse.Namespace(output_root=r'outputs\run', save_data_root=r'\\nas\pixels')
+    out_dir = os.path.join(r'outputs\run', '200611_A5', 't1')
 
-    assert batch._dump_dir(out_dir, args) == os.path.join(r'D:\pixels', '260611_PV5', 't1')
+    assert batch._dump_dir(out_dir, args) == os.path.join(r'\\nas\pixels', '200611_A5', 't1')
 
     beside = argparse.Namespace(output_root=r'outputs\run', save_data_root=None)
     assert batch._dump_dir(out_dir, beside) == out_dir

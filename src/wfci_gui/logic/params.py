@@ -1,6 +1,6 @@
 """Jobs the GUI runs, how their parameters are passed, and the command each one becomes.
 
-gui_spec.md section 6, "Passing values":
+How each kind of script gets its values:
   * argparse scripts get their existing CLI flags;
   * environment-variable scripts (``CONNECTIVITY_STATS_*``) get those variables;
   * flat scripts run through ``run_with_overrides.py <script> --set name=value``.
@@ -8,7 +8,7 @@ gui_spec.md section 6, "Passing values":
 Every job has three kinds of value:
   * ``fixed``    -- derived from the cohort file (paths, frame rate...). Shown read-only:
                     they are edited where they belong (the cohort file / acquisition page);
-  * ``defaults`` -- what the GUI passes unless the user changes it (e.g. no 2026 exclusions);
+  * ``defaults`` -- what the GUI passes unless the user changes it (e.g. no built-in exclusions);
   * overrides    -- what the user changed, stored in the cohort file under ``overrides``.
 """
 
@@ -84,7 +84,7 @@ def _cohort_arg(cohort: Cohort, tables, variant) -> dict[str, Any]:
 
 
 def _view_root(cohort: Cohort) -> str:
-    """Folder the ROI tools browse: the junction view when there is one (CLAUDE.md 9.51)."""
+    """Folder the ROI tools browse: the junction view when there is one."""
     return str(cohort.path_of("link_root") or Path(cohort.get("raw_root")))
 
 
@@ -123,8 +123,8 @@ def _stats_fixed(cohort: Cohort, tables, variant) -> dict[str, Any]:
     ordered = [baseline] + [t for t in timepoints if t != baseline]
     animals = list(choice.get("animals") or [])
     all_animals = sorted(set(tables["animals"]["animal"])) if not tables["animals"].empty else []
-    # The script knows each cohort by a key (2026/2024/2023/botox_2022). A new cohort has
-    # none: adding one is an edit of the script, which needs approval (spec D8).
+    # The script knows each cohort by a key (CONNECTIVITY_STATS_COHORT), named in the cohort
+    # file under analysis_a.stats_cohort.
     stats_cohort = choice.get("stats_cohort") or not_set(
         "analysis_a.stats_cohort; this cohort has no entry in connectivity_stats.py "
         "and adding one needs an approved edit")
@@ -170,7 +170,7 @@ JOBS: dict[str, JobSpec] = {spec.key: spec for spec in (
                                    "design_csv": str(design_path(c)),
                                    "sampling_rate_hz": _acq(c, "sampling_rate_hz"),
                                    "baseline_timepoint": c.timepoints[0]},
-            # The script's default points at the 2024 verdict file; another cohort has none.
+            # A cohort has no channel-assignment verdict file.
             defaults=lambda c, t, v: {"channel_assignment_csv": "none"}),
     JobSpec("design", "design", "Experimental design", "build_cohort_design.py", fixed=_cohort_arg),
     JobSpec("connectivity", "analysis_a", "Connectivity", "roi_pixel_connectivity.py",
@@ -179,11 +179,11 @@ JOBS: dict[str, JobSpec] = {spec.key: spec for spec in (
             flat=True, fixed=_stats_fixed),
 )}
 
-# Unit, range and help per parameter, for the form (spec 6). A parameter without a hint
+# Unit, range and help per parameter, for the form. A parameter without a hint
 # is still shown, as a plain field.
 HINTS: dict[tuple[str, str], Hint] = {
     ("extract", "workers"): Hint("", 1, 32, "Parallel workers. 1 is the reliable default on "
-                                 "Windows (CLAUDE.md 9.12); more is experimental."),
+                                 "Windows (process pools there fail intermittently); more is experimental."),
     ("extract", "channel_buffer"): Hint(help="How each recording is read once: auto picks RAM "
                                         "or a disk buffer."),
     ("extract", "buffer_dir"): Hint(help="SSD folder for the channel buffer when it does not fit in RAM."),
@@ -202,13 +202,13 @@ HINTS: dict[tuple[str, str], Hint] = {
     ("connectivity", "overwrite"): Hint(help="Recompute recordings that already have results."),
     ("bake", "workers"): Hint("", 1, 32, "Parallel workers."),
     ("rebuild", "reference_lambda"): Hint("rows", 1, 200, "Bregma-Lambda distance the atlas was "
-                                          "drawn at (55, CLAUDE.md 9.2). Do not change."),
+                                          "drawn at (55). Do not change."),
     ("stats", "fdr_alpha"): Hint("", 0.001, 0.5, "Benjamini-Hochberg level."),
     ("stats", "uncorrected_alpha"): Hint("", 0.001, 0.5, "Level that marks edges in the figures."),
     ("stats", "nbs_primary_threshold"): Hint("t", 0.5, 10, "NBS edge cut-off on the paired t."),
     ("stats", "nbs_alpha"): Hint("", 0.001, 0.5, "NBS component FWER level."),
     ("qc", "glitch_threshold"): Hint("dF/F ratio", 0.01, 100, "Max |field mean| above which a "
-                                     "recording is suggested for exclusion (CLAUDE.md 9.45)."),
+                                     "recording is suggested for exclusion."),
 }
 
 # Parameters never offered in a form: they only make sense when editing a script by hand.
@@ -387,7 +387,7 @@ def rebuild_inputs(cohort: Cohort, tables) -> tuple[Path, list[Path]]:
     """Reviewed sets to rebuild: every set of each session that has a new or changed one.
 
     A whole session is copied, not only the changed file, because rebuild_roi_sets.py
-    normalises Bregma/Lambda by the t1-t5 majority within a session (CLAUDE.md 9.20).
+    normalises Bregma/Lambda by the t1-t5 majority within a session.
     Raises when nothing is new.
     """
     reviewed = cohort.path_of("reviewed_roi_set_dir")

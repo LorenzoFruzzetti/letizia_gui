@@ -1,6 +1,6 @@
 """Generic significance visualisation -- mask a matrix by an adjacency, draw the network.
 
-LIBRARY, not policy (MERGING_PLAN.md P2). This ingests an **adjacency matrix** of
+LIBRARY, not policy. This ingests an **adjacency matrix** of
 significant connections (e.g. exported from NBS, or from a future permutation
 test) and a **value matrix** (e.g. a group difference ``DIFF``), and produces:
 
@@ -12,7 +12,7 @@ Colour scales and node positions are **arguments with sensible defaults** -- the
 are study choices, not library constants. A study passes its own anatomical node
 coordinates and, if it wants, its own colour scheme.
 
-**NBS itself stays out** (MERGING_PLAN.md §4.3, an explicit non-goal). Computing
+**NBS itself stays out** (an explicit non-goal). Computing
 the network-based statistic is a separate project; this consumes its result. The
 adjacency can come from anywhere that yields an ``[n, n]`` matrix whose non-zero
 entries mark significant edges.

@@ -12,25 +12,25 @@ where on the cortex activity follows that ROI. It is not limited to the other bo
 
 Seeds are the nanmean of the dumped pixels inside each box of the recording's
 OWN `roi_sets/rebuilt/<day>_<animal>_<t#>.yaml` (the one named in its dump meta),
-so they are the traces `R` was computed from, to float16 storage error
-(CLAUDE.md 9.19). The ROI x ROI matrix recomputed from them is saved as well
+so they are the traces `R` was computed from, to float16 storage error.
+The ROI x ROI matrix recomputed from them is saved as well
 (`R_roi`) so it can be checked against extract_cohort's `R_mean`.
 
 Averaging. Correlations are averaged as Fisher z (arctanh), then converted back
 with tanh: recordings -> one map per animal-day (unit), units -> one map per
 group. Every unit therefore weighs the same in its group, however many `t#` it
-has. The saved crop is Bregma-relative (CLAUDE.md 9.15), so pixel (y, x) names the
+has. The saved crop is Bregma-relative, so pixel (y, x) names the
 same position relative to Bregma in every animal, and maps can be averaged pixel
 by pixel without any registration.
 
 Signal. `volume_file` picks which dumped/cached per-pixel volume is correlated:
 `pixels_dff_full.npy` (default) is the mean-baseline dF/F that extract_cohort's
 `R` is computed from. `pixels_median_dff_<N>s_full.npy` (cache_median_dff.py) is
-the running-median dF/F the epileptic detectors use. The output folder is named
+the running-median dF/F. The output folder is named
 after the volume so two signals never overwrite each other.
 
-GSR (`gsr`, off by default). Global signal regression as in
-`Antea_scripts/(2)_Global_Signal_Regression_SCRIPT.txt` (wfci.gsr): the global
+GSR (`gsr`, off by default). Global signal regression as in the reference MATLAB
+GSR script (wfci.gsr): the global
 signal g(t) is the mean, per frame, of the pixels inside the union of the
 recording's ROI boxes (the cortex, standing in for the MATLAB's brain mask; the
 rectangular crop can include off-brain pixels at its edges). Every pixel of the
@@ -41,13 +41,12 @@ and negative values are expected (a known property of GSR, not an error). The
 output folder gets a `_gsr` suffix. `gsr_global_mean` sets how g(t) averages the
 union: "column" (default) is the MATLAB script exactly, nanmean(nanmean(data,1),2),
 the mean of the column means; "pixel" is the plain pixel mean (folder
-`_gsr_pixelmean`), which is what `_gsr` meant before 2026-10-05. They differ
-because the union's columns hold different numbers of pixels (CLAUDE.md 9.37).
+`_gsr_pixelmean`). They differ because the union's columns hold different numbers
+of pixels.
 
-`260828_PV7/t2` is excluded by default: its frame 1809 is a field-wide
-reflectance glitch (dF/F ~10 in every pixel) followed by a persistent GCaMP step
-(CLAUDE.md 9.23, 9.27). One such frame is shared by every pixel and would drive
-every correlation of that recording towards 1.
+Exclude a recording with a field-wide reflectance glitch (a frame with dF/F ~10 in
+every pixel): one such frame is shared by every pixel and would drive every
+correlation of that recording towards 1.
 
 Cortex-wide GCaMP. Every recording also stores, per frame, the mean over the ROI
 union (the cortex) of the raw GCaMP F (`cortex_mean_gcamp`, counts, from
@@ -55,7 +54,7 @@ union (the cortex) of the raw GCaMP F (`cortex_mean_gcamp`, counts, from
 (`cortex_mean_signal`). They go in the per-recording .npz, as mean/sd columns of
 recording_summary.csv, and frame by frame in cortex_mean_gcamp_traces.csv.
 
-Full-frame dumps (the 2022 cohort, CLAUDE.md 9.61) have a different Bregma per
+Full-frame dumps (written with no dump window) have a different Bregma per
 animal-day. Unit maps are then shifted onto one Bregma-aligned canvas before the
 group mean (translation only), and each pixel is averaged over the units covering it.
 
@@ -109,20 +108,20 @@ RUN_CONFIG: dict[str, Any] = {
     "volume_file": "pixels_dff_full.npy",  # Per-pixel signal correlated; see the docstring.
     "output_root": REPO_ROOT / "outputs/roi_pixel_connectivity",  # A subfolder per volume_file.
     # None: each dump's own ROI set. A folder: per-recording sets drawn with
-    # pixel_roi_editor.py (every recording must then carry the same labels, in the
+    # the ROI editor (every recording must then carry the same labels, in the
     # same order, to be averaged); the output subfolder gets a _roi_<folder> suffix.
     "roi_set_dir": None,
     # Cross-check of each dump's own `group`; None skips the check.
-    "groups_csv": REPO_ROOT / "outputs/epileptic_groups/batch_summary.csv",
-    "exclude_recordings": ["260828_PV7/t2", "260522_PV4/t3"],  # "<date>_<animal>/<t#>"; see the docstring.
+    "groups_csv": None,
+    "exclude_recordings": [],  # "<date>_<animal>/<t#>"; see the docstring.
     "gsr": False,  # True: regress the ROI-union global signal out of every pixel first; see the docstring.
-    # How the GSR global signal averages the ROI union: "column" = Antea's script (2)
-    # exactly (mean of column means), folder suffix _gsr; "pixel" = plain pixel mean
-    # (the behaviour before 2026-10-05), folder suffix _gsr_pixelmean.
+    # How the GSR global signal averages the ROI union: "column" = the reference MATLAB
+    # GSR exactly (mean of column means), folder suffix _gsr; "pixel" = plain pixel mean,
+    # folder suffix _gsr_pixelmean.
     "gsr_global_mean": "column",
-    # Parallel processes; 1 runs serially in this process. Measured ~0.5 s per
-    # recording, so the whole cohort is ~5 min serially. The job does no BLAS
-    # work (see pixel_correlation), so CLAUDE.md 9.11/9.12 do not apply to a pool.
+    # Parallel processes; 1 runs serially in this process (about 0.5 s per
+    # recording). The job does no BLAS work (see pixel_correlation), so the
+    # Windows BLAS failures of spawned workers do not apply to a pool.
     "workers": 1,
     "recording_limit": None,  # None: all dumps; positive integer: only the first N (smoke test).
     "overwrite": False,  # True: recompute recordings that already have an output .npz.
@@ -146,8 +145,7 @@ def pixel_correlation(seed_traces: np.ndarray, pixels: np.ndarray) -> np.ndarray
     Same explicit centring/norm formula as wfci.roi._corrcoef_matlab, so a pixel
     identical to a seed trace gives exactly the `R` entry. The cross products use
     einsum without `optimize`, which sums in its own loops and never dispatches to
-    BLAS -- the native 0xc06d007f failure point on this machine (CLAUDE.md 9.11,
-    9.17). A pixel that is constant or has a non-finite value comes out NaN.
+    BLAS -- the native 0xc06d007f failure point on Windows. A pixel that is constant or has a non-finite value comes out NaN.
     """
     seeds_centred = seed_traces - seed_traces.mean(axis=0, keepdims=True)
     pixels_centred = pixels - pixels.mean(axis=0, keepdims=True)
@@ -168,16 +166,16 @@ def regress_global_signal(pixels: np.ndarray, region_mask: np.ndarray,
     pixels: (n_time, n_pixels) float64, the frame flattened row by row;
     region_mask: (n_rows, n_cols) bool, the pixels averaged into the global signal
     (a 1-D (n_pixels,) mask is accepted only with global_mean="pixel").
-    global_mean: "column" (default) is Antea's script (2) exactly,
+    global_mean: "column" (default) is the reference MATLAB GSR exactly,
     nanmean(nanmean(data,1),2): the mean down each column of the region, then the
     mean of those column means, so every column counts once however many region
-    pixels it holds. "pixel" is the plain mean of all region pixels, which is what
-    this function did before 2026-10-05 (the `_gsr_pixelmean` folders); for a union
-    of boxes the two move ROI correlations by up to 0.13 (CLAUDE.md 9.37).
+    pixels it holds. "pixel" is the plain mean of all region pixels (the
+    `_gsr_pixelmean` folders); for a union of boxes the two give noticeably
+    different ROI correlations.
     Returns (residuals (n_time, n_pixels), g (n_time,)).
     Same fit as fitlm(g, p) in the MATLAB / wfci.gsr.regress_global, in closed form:
     slope a = cov(g, p) / var(g), residual = p - mean(p) - a * (g - mean(g)).
-    einsum instead of a matrix product keeps BLAS out (CLAUDE.md 9.11, 9.17).
+    einsum instead of a matrix product keeps BLAS out.
     """
     if global_mean not in GLOBAL_MEANS:
         raise ValueError(f"global_mean={global_mean!r} is not one of {GLOBAL_MEANS}")
@@ -222,9 +220,9 @@ def bregma_canvas(bregmas: list[np.ndarray], shapes: list[tuple[int, int]]) -> t
 
     bregmas: each map's zero-based (row, col) Bregma inside its own crop; shapes:
     each map's (rows, cols). Returns (canvas shape, canvas Bregma, per-map (row, col)
-    offset of its crop on the canvas). With the 2026 dumps every crop is already
-    Bregma-relative (CLAUDE.md 9.15), so all offsets are 0 and the canvas is the crop.
-    The 2022 dumps are full frames with a different Bregma per animal-day (9.61).
+    offset of its crop on the canvas). With a Bregma-relative dump window every crop is
+    already aligned, so all offsets are 0 and the canvas is the crop.
+    Full-frame dumps have a different Bregma per animal-day.
     Only a translation: Lambda scale and angle differences are not undone.
     """
     above = max(int(bregma[0]) for bregma in bregmas)
@@ -250,7 +248,7 @@ def read_meta(meta_path: Path) -> dict[str, Any]:
         raise ValueError(f"Unsupported pixel axes in {meta_path}")
     if meta["n_written"] != meta["n_time"] or meta["n_time"] <= 0:
         raise ValueError(f"Incomplete pixel dump: {meta_path}")
-    # A dump written with save_data_window=None (the 2022 cohort, CLAUDE.md 9.61)
+    # A dump written with save_data_window=None (full frame)
     # stores no region: it is the whole grid, which its saved shape must match.
     if "region" not in meta:
         if list(meta["shape"][1:]) != list(meta["grid"]):
@@ -263,8 +261,8 @@ def recording_boxes(meta: dict[str, Any],
                     roi_set_dir: Path | None = None) -> tuple[Path, dict[str, dict[str, int]]]:
     """The recording's atlas (or its override), checked against the geometry stored in its dump.
 
-    Only the dump's own set must list the dump's `roi_labels`: an override from
-    pixel_roi_editor.py may add, drop or rename boxes.
+    Only the dump's own set must list the dump's `roi_labels`: an override set
+    may add, drop or rename boxes.
     """
     atlas_path, atlas = recording_roi_set(meta, roi_set_dir, base_dir=REPO_ROOT)
     if roi_set_dir is None and list(atlas["boxes"]) != list(meta["roi_labels"]):
@@ -383,7 +381,7 @@ def draw_seed_maps(r_maps: np.ndarray, labels: list[str], bregma: np.ndarray,
 
 
 def gsr_suffix(gsr: bool, global_mean: str) -> str:
-    """Output-folder suffix: none without GSR, _gsr for Antea's column mean, _gsr_pixelmean."""
+    """Output-folder suffix: none without GSR, _gsr for the column mean, _gsr_pixelmean."""
     if not gsr:
         return ""
     return "_gsr" if global_mean == "column" else "_gsr_pixelmean"
@@ -397,13 +395,13 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser.add_argument("--groups-csv", type=lambda value: None if value.lower() == "none" else Path(value),
                         default=defaults["groups_csv"], help="'none' skips the group cross-check")
     parser.add_argument("--roi-set-dir", type=Path, default=defaults["roi_set_dir"],
-                        help="Folder of per-recording ROI sets (pixel_roi_editor.py) used instead of "
+                        help="Folder of per-recording ROI sets (ROI editor) used instead of "
                              "each dump's own; the output subfolder gets a _roi_<folder> suffix")
     parser.add_argument("--exclude-recordings", nargs="*", default=defaults["exclude_recordings"])
     parser.add_argument("--gsr", action=argparse.BooleanOptionalAction, default=defaults["gsr"],
                         help="Regress the ROI-union global signal out of every pixel; output folder gets _gsr")
     parser.add_argument("--gsr-global-mean", choices=GLOBAL_MEANS, default=defaults["gsr_global_mean"],
-                        help="column: Antea's nanmean(nanmean(data,1),2) (default, folder _gsr); "
+                        help="column: nanmean(nanmean(data,1),2) as in MATLAB (default, folder _gsr); "
                              "pixel: plain mean of the union pixels (folder _gsr_pixelmean)")
     parser.add_argument("--workers", type=int, default=defaults["workers"],
                         help="Parallel processes; 1 runs serially in the main process")
@@ -479,7 +477,7 @@ def main():
             report(i_job, analyze_recording(job))
     elif jobs:
         # Pool's context exit calls terminate(), so Ctrl+C or a worker error stops
-        # every worker instead of waiting for the queue (the trap in CLAUDE.md 9.10).
+        # every worker instead of waiting for the queue.
         with Pool(processes=min(args.workers, len(jobs))) as pool:
             for i_job, result in enumerate(pool.imap_unordered(analyze_recording, jobs, chunksize=1), start=1):
                 report(i_job, result)
@@ -496,8 +494,8 @@ def main():
 
     # Optional cross-check of the dumps' own groups against the group table.
     if args.groups_csv is not None:
-        # keep_default_na=False: a group can legitimately BE the string "NA" (the
-        # 2024 cohort's placeholder, CLAUDE.md 9.50), and pandas would otherwise read
+        # keep_default_na=False: a group can legitimately BE the string "NA" (a
+        # placeholder group), and pandas would otherwise read
         # it as NaN and fail the comparison against the dump's own "NA".
         group_table = pd.read_csv(args.groups_csv, dtype=str, keep_default_na=False)
         expected_group = {(row.day, row.animal): row.group for row in group_table.itertuples()}
@@ -569,7 +567,7 @@ def main():
     # Group maps: Fisher-z mean over units, so each animal-day weighs the same.
     # group_maps: (n_groups, n_roi, rows, cols)
     # Unit maps go onto one Bregma-aligned canvas first; when every crop already
-    # shares Bregma (the 2026 dumps) all offsets are 0 and nothing changes.
+    # shares Bregma (a Bregma-relative window) all offsets are 0 and nothing changes.
     canvas_shape, bregma, offsets = bregma_canvas([unit_bregma[unit] for unit in units],
                                                   [unit_maps[unit].shape[1:] for unit in units])
     unit_offset = dict(zip(units, offsets))

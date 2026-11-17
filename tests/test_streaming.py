@@ -39,7 +39,7 @@ RTOL = 1e-9
 
 def _sample_raw() -> np.ndarray:
     """Load the 7 sample frames as a [y, x, time] float64 stack."""
-    files = sorted(DATA_DIR.glob("R11_*.tif"))
+    files = sorted(DATA_DIR.glob("img_*.tif"))
     if not files:
         pytest.skip(f"No sample frames in {DATA_DIR}")
     frames = [np.asarray(tifffile.imread(str(f)), dtype=np.float64) for f in files]

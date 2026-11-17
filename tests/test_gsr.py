@@ -1,6 +1,6 @@
 """GSR: the vectorised closed form must equal an honest per-pixel OLS.
 
-MERGING_PLAN.md Phase 3 replaces MATLAB's 16 384 ``fitlm`` calls per trial with a
+The library replaces MATLAB's 16 384 ``fitlm`` calls per trial with a
 closed-form vectorised OLS. That is a legitimate rewrite only because ``fitlm``
 with one predictor and an intercept *is* OLS -- so the way to earn it is to check
 against a reference that fits each pixel separately and naively, the way the
@@ -10,7 +10,7 @@ That reference is ``np.linalg.lstsq`` per pixel with an explicit design matrix
 ``[g, 1]``: no shared algebra with the implementation under test, so an error in
 the closed form cannot cancel out.
 
-Scope (MERGING_PLAN.md P4/Phase 8): this validates the VECTORISATION, not the
+Scope: this validates the VECTORISATION, not the
 TRANSCRIPTION. It proves the Python computes OLS correctly; it does not prove
 that OLS-on-this-input is what the MATLAB script would have produced on real
 data, because there is no MATLAB reference for the cortical path.
@@ -68,7 +68,7 @@ def _lstsq_reference(stack: np.ndarray, g: np.ndarray) -> np.ndarray:
 # The acceptance criterion
 # ---------------------------------------------------------------------------
 def test_vectorised_gsr_equals_per_pixel_lstsq():
-    """The whole point of Phase 3: same numbers, none of the 16 384 fits."""
+    """The whole point of the closed form: same numbers, none of the 16 384 fits."""
     stack = apply_mask(_stack(), _mask())
     g = global_signal(stack)
 
@@ -166,7 +166,7 @@ def test_global_signal_is_the_spatial_mean_of_brain_pixels():
 def test_global_signal_of_one_frame_uses_only_that_frame():
     """g(t) is a purely spatial reduction -- no lookahead.
 
-    This is the property the streaming path is built on (MERGING_PLAN.md §2.2):
+    This is the property the streaming path is built on:
     g(t) is known the moment frame t is read.
     """
     stack = _stack(seed=8)

@@ -1,7 +1,6 @@
 """MATLAB's default colormap, parula, as a matplotlib colormap.
 
-Antea's MATLAB figures (Antea_scripts/) never set a colormap, so `imagesc` draws them
-with parula. Matplotlib has no parula; this is MATLAB's `parula(256)` RGB table (the
+MATLAB figures that set no colormap are drawn by `imagesc` with parula. Matplotlib has no parula; this is MATLAB's `parula(256)` RGB table (the
 current version; the original R2014b table had 64 rows and a slightly different start),
 taken from https://stackoverflow.com/a/60007513 (Stack Overflow question 34859628).
 

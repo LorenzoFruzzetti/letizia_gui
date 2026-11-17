@@ -1,12 +1,12 @@
 """Read a script's parameters and their defaults by parsing its source with ``ast``.
 
-gui_spec.md section 6: no script is executed to read its defaults. Three kinds of
+No script is executed to read its defaults. Three kinds of
 parameter are found:
 
   * ``flag``   -- an argparse ``add_argument("--name", ...)``; its default is resolved
                   through ``defaults["key"]`` / ``RUN_CONFIG["key"]`` when written so;
   * ``env``    -- ``os.environ.get("NAME", default)`` / ``os.getenv(...)``;
-  * ``assign`` -- a module-level ``name = <literal>`` (flat scripts, CLAUDE.md 6),
+  * ``assign`` -- a module-level ``name = <literal>`` (flat scripts),
                   including assignments inside module-level ``if``/``else``/``try``.
 
 A value that is computed rather than written as a literal is reported with
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
-# Names that hold the editor-run configuration dictionary (CLAUDE.md 5.2).
+# Names that hold the editor-run configuration dictionary.
 RUN_CONFIG_PREFIX = "RUN_CONFIG"
 
 
@@ -76,7 +76,7 @@ class ScriptParameters:
 
 # ----------------------------------------------------------------------------- helpers
 def file_hash(path: str | Path) -> str:
-    """sha256 of the script file, stored with presets (spec 6: warn on a different hash)."""
+    """sha256 of the script file, stored with presets (a different hash is warned about)."""
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 

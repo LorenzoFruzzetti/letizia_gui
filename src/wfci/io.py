@@ -7,8 +7,8 @@ than ~4 GB are read incorrectly; ``tifffile`` used here has no such limit.
 Two acquisition layouts are supported:
   * a single multi-page TIFF file  -> :func:`load_stack`
   * a folder of single-page TIFFs   -> :func:`load_frame_folder`
-    (the sample dataset in ``data/`` is of this second kind: R11_00001..7.tif,
-    each one 512x512 frame, forming one channel's time series when sorted.)
+    (for example img_00001.tif, img_00002.tif, ..., each one 512x512 frame,
+    forming one channel's time series when sorted.)
 
 Every loader returns a float64 array shaped ``[y, x, time]`` to match the
 MATLAB convention (rows, cols, frames).
@@ -33,7 +33,7 @@ from .resize import imresize_box
 
 # Valid values of every ``frame_order`` argument below.
 FRAME_ORDERS = ("name", "number")
-# Trailing integer of a file stem: "..._bin48_37" -> 37, "R11_00001" -> 1.
+# Trailing integer of a file stem: "..._bin48_37" -> 37, "img_00001" -> 1.
 _TRAILING_NUMBER_RE = re.compile(r"(\d+)$")
 
 
@@ -44,11 +44,11 @@ def sorted_frame_files(folder: str | Path, pattern: str = "*.tif",
     ``frame_order`` says how that order is read off the file names:
 
     ``"name"`` (default)
-        Lexicographic sort. Correct for zero-padded frame indices (R11_00001,
-        R11_00002, ...), which every cohort before July 2023 uses.
+        Lexicographic sort. Correct for zero-padded frame indices (img_00001,
+        img_00002, ...).
     ``"number"``
         Sort by the integer at the END of the file stem. Needed when the index is
-        NOT zero-padded (the July 2023 cohort: ``..._1.tif``, ``..._2.tif``, ...,
+        NOT zero-padded (``..._1.tif``, ``..._2.tif``, ...,
         ``..._10.tif``), where a name sort gives 1, 10, 100, 1000, 1001, ... and
         mixes the two interleaved channels. A file with no trailing number raises
         (it would have no place in the order), and so does a repeated number.
@@ -142,8 +142,8 @@ def iter_folder_frames(files: list[str | Path], rot90_k: int = 0) -> Iterator[np
 
     ``rot90_k`` rotates every frame by ``k`` quarter turns right after decoding
     (``np.rot90``: positive is counter-clockwise, -1 is clockwise), for a camera
-    mounted at 90 degrees to the atlas. The 2022 cohort has the midline horizontal
-    with anterior on the left; -1 puts anterior on top. It is a rotation, never a
+    mounted at 90 degrees to the atlas: with the midline horizontal and anterior
+    on the left, -1 puts anterior on top. It is a rotation, never a
     mirror, so the hemispheres keep their handedness. 0 = frames unchanged.
     """
     for f in files:
@@ -194,8 +194,8 @@ def load_frame_folder(folder: str | Path, pattern: str = "*.tif",
                       frame_order: str = "name") -> np.ndarray:
     """Assemble single-page TIFFs in a folder into one ``[y, x, time]`` stack.
 
-    Files are ordered by :func:`sorted_frame_files`: by name (R11_00001,
-    R11_00002, ..., the acquisition order for zero-padded frame indices) unless
+    Files are ordered by :func:`sorted_frame_files`: by name (img_00001,
+    img_00002, ..., the acquisition order for zero-padded frame indices) unless
     ``frame_order="number"``.
     """
     folder = Path(folder)
@@ -355,7 +355,6 @@ def load_interleaved_folder(
 
 # ---------------------------------------------------------------------------
 # Whole-recording channel selection with a single read
-# (letizia_refactoring/channel_selection_spec.md)
 #
 # ``channel_order="auto"`` above decides from TWO frames. The functions below
 # instead read every frame of a block once, keep the two interleaved groups
@@ -386,18 +385,16 @@ DISK_SAFETY_FACTOR = 1.1
 class ChannelDecisionConfig:
     """Thresholds of :func:`decide_channel_order`.
 
-    The defaults are the ones ``check_channel_assignment.py`` was calibrated with
-    on 60 sampled full-resolution frames of the 2024 cohort; here they are applied
-    to every half-resolution trimmed frame, so validate them against
-    ``manifests/channel_assignment_2024.csv`` before trusting them on a new cohort.
+    The defaults were calibrated on sampled full-resolution frames; here they are
+    applied to every half-resolution trimmed frame, so validate them against a
+    checked channel assignment before trusting them on a new cohort.
     """
 
     # Per-frame level the order and the separation are decided on:
-    #   "median"      -- the frame median (default; what check_channel_assignment.py,
-    #                    and so manifests/channel_assignment_2024.csv, used);
-    #   "top_percent" -- mean of the brightest ``top_percent``% pixels (the original
-    #                    spec text). On 9 real 2024 recordings it put 3 in the wrong
-    #                    order -- the old 2-frame auto's errors -- where median got 9/9.
+    #   "median"      -- the frame median (default; the more reliable of the two);
+    #   "top_percent" -- mean of the brightest ``top_percent``% pixels. It can put
+    #                    channels close in brightness in the wrong order, where the
+    #                    median does not.
     level_statistic: str = "median"
     # Used by level_statistic "top_percent" (and always recorded in ChannelStats).
     top_percent: float = 10.0
@@ -405,7 +402,7 @@ class ChannelDecisionConfig:
     # LEVEL_REGIONS. "roi_union" needs the caller to supply the mask (the pipeline
     # builds it from the recording's ROI set: wfci.streaming.roi_union_level_mask).
     # Over cortex the two channels can be close or even reversed in brightness
-    # (2023: GCaMP/emo 0.42-1.27 over the ROI union vs 0.41-0.94 whole-frame), so
+    # (the GCaMP/emo ratio spreads wider over the ROI union than over the frame), so
     # dimmer-is-GCaMP is calibrated for "frame" only; validate before relying on it.
     level_region: str = "frame"
     # The brightness alternates frame to frame when the lag-1 autocorrelation of
@@ -422,7 +419,7 @@ def frame_median_and_top_mean(frame: np.ndarray, top_percent: float = 10.0) -> t
     One ``np.partition`` gives both, which matters because this runs on every
     frame of every recording. The median equals ``np.median`` (mean of the two
     middle values for an even pixel count); the top set is the ``k`` largest
-    pixels, ``k = round(n * top_percent / 100)``, as in check_channel_assignment.py.
+    pixels, ``k = round(n * top_percent / 100)``.
     """
     flat = np.asarray(frame, dtype=np.float64).ravel()
     n = flat.size
@@ -524,8 +521,7 @@ def channel_stats_from_stacks(odd: np.ndarray, even: np.ndarray, trim: int,
 def _lag1_autocorrelation(values: np.ndarray) -> float:
     """Pearson r between ``values[:-1]`` and ``values[1:]``; NaN when undefined.
 
-    Written out rather than via ``np.corrcoef`` to keep BLAS out of the path
-    (CLAUDE.md 9.11 / 9.17).
+    Written out rather than via ``np.corrcoef`` to keep BLAS out of the path.
     """
     a = values[:-1] - values[:-1].mean()
     b = values[1:] - values[1:].mean()
@@ -542,12 +538,12 @@ def decide_channel_order(stats: ChannelStats,
 
     Returns ``(order, verdict, details)``. This is the ONE place the decision
     statistic lives, so it can be replaced without touching the buffering or the
-    pipeline (spec, "Future").
+    pipeline.
 
     ``alternation``
         Lag-1 autocorrelation of the interleaved per-frame medians (odd0, even0,
         odd1, even1, ...). Two interleaved channels give ~-1; a value near 0 means
-        the brightness does not alternate (CLAUDE.md 9.34 / 9.52: unsynchronised
+        the brightness does not alternate (unsynchronised
         LED), and then NO assignment is correct.
     ``separation``
         ``|median(odd levels) - median(even levels)|`` over the mean within-group

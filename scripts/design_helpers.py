@@ -39,7 +39,7 @@ def add_within_animal_day_index(design: pd.DataFrame, day_zero_days: list[str]) 
 def add_days_since_day1(design: pd.DataFrame) -> pd.DataFrame:
     """Calendar days from the animal's day 1 session (day1 = 0; day 0 sessions are negative).
 
-    E.g. day1 = 260618 and day2 = 260621 gives 0 and 3.
+    E.g. day1 = 200101 and day2 = 200104 gives 0 and 3.
     """
     session_date = pd.to_datetime(design["day"], format="%y%m%d")
     day1_date = session_date.where(design["day_index"] == 1).groupby(design["animal"]).transform("min")

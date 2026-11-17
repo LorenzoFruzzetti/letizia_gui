@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from channel_rectangle_viewer import (  # noqa: E402
     RectangleParams, agreement_marks, agreement_summary, axis_frame, bregma_point,
-    gcamp_parity_from_order, gcamp_parity_from_statistic, lambda_point, manifest_order_2023,
+    gcamp_parity_from_order, gcamp_parity_from_statistic, lambda_point, manifest_order_from_verdict,
     load_params, rectangle_corners, rectangle_mask, rectangle_statistic, save_params, value_ratio,
 )
 
@@ -22,7 +22,7 @@ BREGMA = np.array([121.0, 133.0])
 
 
 def test_bregma_point_is_the_centre_of_the_pipelines_128_pixel():
-    # 240118_SP20_000/t1: bregma 122/134 -> y_1 61, x_2 67 -> 256 rows 120-121, cols 132-133
+    # e.g. bregma 122/134 -> y_1 61, x_2 67 -> 256 rows 120-121, cols 132-133
     assert np.array_equal(bregma_point(122, 134), [121.0, 133.0])
     assert np.array_equal(bregma_point(123, 135), [121.0, 133.0])
 
@@ -103,7 +103,7 @@ def test_statistics_point_the_right_way():
 def test_agreement_marks_skip_an_unlabelled_system():
     assert agreement_marks({"library": "odd", "manifest": "even", "rectangle": "odd"}) == {
         "library": "⚠", "manifest": "⚠", "rectangle": "⚠"}
-    # A not-interleaved cache (9.72) gives no parity: the other two are compared alone.
+    # A not-interleaved cache gives no parity: the other two are compared alone.
     labels = {"library": gcamp_parity_from_order("odd_even_unassigned"), "manifest": "odd", "rectangle": "odd"}
     assert agreement_marks(labels) == {"library": "–", "manifest": "✓", "rectangle": "✓"}
     assert agreement_summary(labels) == "?"
@@ -115,18 +115,18 @@ def test_value_ratio_is_higher_over_lower():
     assert value_ratio(0.0, 0.3) == math.inf
 
 
-def test_2023_verdict_is_mapped_through_the_old_full_field_ratio():
+def test_verdict_table_is_mapped_through_the_old_full_field_ratio():
     odd, even = np.full((4, 4), 9000.0), np.full((4, 4), 10000.0)
     # Old "f" was the odd group (ratio 0.9 matches odd/even): correct -> odd is GCaMP.
     row = pd.Series({"verdict": "correct", "f_over_r_full_field": "0.900"}, name="k")
-    assert manifest_order_2023(row, odd, even) == "gcamp_first"
-    assert manifest_order_2023(row.replace("correct", "swapped"), odd, even) == "emo_first"
+    assert manifest_order_from_verdict(row, odd, even) == "gcamp_first"
+    assert manifest_order_from_verdict(row.replace("correct", "swapped"), odd, even) == "emo_first"
     # Old "f" was the even group (ratio 1.111 = even/odd).
     row = pd.Series({"verdict": "correct", "f_over_r_full_field": "1.111"}, name="k")
-    assert manifest_order_2023(row, odd, even) == "emo_first"
-    assert manifest_order_2023(row.replace("correct", "inseparable"), odd, even) == ""
+    assert manifest_order_from_verdict(row, odd, even) == "emo_first"
+    assert manifest_order_from_verdict(row.replace("correct", "inseparable"), odd, even) == ""
     with pytest.raises(ValueError, match="matches neither"):
-        manifest_order_2023(pd.Series({"verdict": "correct", "f_over_r_full_field": "0.5"}, name="k"), odd, even)
+        manifest_order_from_verdict(pd.Series({"verdict": "correct", "f_over_r_full_field": "0.5"}, name="k"), odd, even)
 
 
 def test_params_round_trip(tmp_path):

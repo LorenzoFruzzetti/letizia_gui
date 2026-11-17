@@ -1,6 +1,6 @@
-"""Single-read, whole-recording channel selection (channel_selection_spec.md).
+"""Single-read, whole-recording channel selection.
 
-Covers the spec's test list:
+Covers:
 
 * exactness -- ``ram``, ``disk`` and ``none`` give ROI traces, correlation matrices
   and pixel dumps bit-identical to today's two-read path run with the same explicit
@@ -439,7 +439,7 @@ def small_geometry(monkeypatch):
 
 
 def _job(tmp_path: Path, folders: list[Path], args, orders: list[str], merged=False):
-    row = dict(day="240101", animal="A1", group="P", profile="cerebellar_rs",
+    row = dict(day="210101", animal="A1", group="P", profile="cerebellar_rs",
                bregma_row=str(2 * Y_1), bregma_col=str(2 * X_2),
                recording_paths=";".join(str(f) for f in folders),
                channel_order=";".join(orders), total_frames="0", n_recordings=str(len(folders)))
@@ -491,7 +491,7 @@ def _write_manifest(path: Path, folders: list[Path]) -> None:
                                            "total_frames", "n_recordings"])
         w.writeheader()
         for i, folder in enumerate(folders):
-            w.writerow(dict(day="240101", animal=f"A{i}", group="P", profile="cerebellar_rs",
+            w.writerow(dict(day="210101", animal=f"A{i}", group="P", profile="cerebellar_rs",
                             bregma_row="4", bregma_col="4", recording_paths=str(folder),
                             channel_order="auto", total_frames="48", n_recordings="1"))
 
@@ -584,7 +584,7 @@ def test_debug_mode_stores_odd_even(tmp_path, small_geometry):
 
 
 def test_rerun_redoes_only_skipped_rows_and_replaces_them(tmp_path, small_geometry, monkeypatch):
-    """The 2024 rerun: a skipped row with a stale .npz is redone, a done row is untouched."""
+    """A rerun: a skipped row with a stale .npz is redone, a done row is untouched."""
     good = write_recording(tmp_path / "raw" / "good" / "t1", seed=1)
     bad = write_recording(tmp_path / "raw" / "bad" / "t1", interleaved=False, jitter=60.0)
     args = _batch_args(tmp_path, channel_buffer="ram", skip_not_interleaved=True)
@@ -594,14 +594,14 @@ def test_rerun_redoes_only_skipped_rows_and_replaces_them(tmp_path, small_geomet
     batch.main()
     assert [r["status"] for r in _summary_rows(args)] == ["done", "skipped"]
 
-    # What October left behind: outputs from before the recording was flagged, which
+    # What an earlier run left behind: outputs from before the recording was flagged, which
     # must NOT count as complete.
-    stale_dir = Path(args.output_root, "240101_A1", "t1")
+    stale_dir = Path(args.output_root, "210101_A1", "t1")
     stale_dir.mkdir(parents=True)
     (stale_dir / "connectivity_full.npz").write_bytes(b"old")
     (stale_dir / "pixels_meta_full.npz").write_bytes(b"old")
 
-    good_files = sorted(Path(args.output_root, "240101_A0", "t1").iterdir())
+    good_files = sorted(Path(args.output_root, "210101_A0", "t1").iterdir())
     before = {p: (p.stat().st_mtime_ns, p.stat().st_size) for p in good_files}
     args.skip_not_interleaved = False
     batch.main()
@@ -640,7 +640,7 @@ def test_resume_does_not_reread_a_skipped_recording(tmp_path, small_geometry, mo
                                            "bregma_col", "recording_paths", "channel_order",
                                            "total_frames", "n_recordings"])
         w.writeheader()
-        w.writerow(dict(day="240101", animal="A1", group="P", profile="cerebellar_rs",
+        w.writerow(dict(day="210101", animal="A1", group="P", profile="cerebellar_rs",
                         bregma_row="4", bregma_col="4", recording_paths=str(bad),
                         channel_order="auto", total_frames="48", n_recordings="1"))
     args.manifest = str(manifest)
@@ -703,8 +703,8 @@ def test_debug_mode_decides_from_the_loaded_frames(tmp_path, small_geometry):
 
 
 def test_level_statistic_median_vs_top_percent():
-    """A group can be dimmer by its median yet brighter in its top 10% (the 2024
-    misassignments): the two level statistics then pick opposite orders."""
+    """A group can be dimmer by its median yet brighter in its top 10%: the two
+    level statistics then pick opposite orders."""
     rng = np.random.default_rng(5)
     stats = ChannelStats(top_percent=10.0)
     for _ in range(50):

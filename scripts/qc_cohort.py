@@ -1,19 +1,19 @@
 """Quality-control table of a cohort: one row per recording, with a SUGGESTED verdict.
 
-Every check here caught a real problem in an earlier cohort, and none is reported by the
-batch itself (docs/NEW_DATASET_WORKFLOW.md step 5):
+Each check looks for a problem that can occur in real data and that the batch itself
+does not report:
 
   completeness   4 dump files + connectivity_full.npz, no ``.partial`` leftovers, volume shape
   geometry       the dump's Bregma and ROI set are the recording's OWN rebuilt set (a shared
-                 fallback would give one Bregma for all, CLAUDE.md 9.4)
+                 fallback would give one Bregma for all)
   dump vs traces box means of pixels_dff_full.npy reproduce roi_fluorescence_full.csv
-                 (~1e-3 pp, the float16 cost; the dump is already in %, 9.51)
+                 (~1e-3 pp, the float16 cost; the dump is already in %)
   channels       the batch's verdict and odd/even separation (certain / uncertain /
-                 not_interleaved / needs_channel_decision, 9.71/9.72)
+                 not_interleaved / needs_channel_decision)
   glitch         max |field mean| of the median dF/F (ratio; > 1 = a one-frame
-                 reflectance collapse, exclude, 9.23/9.45; 0.2-0.3 check the R first, 9.51)
+                 reflectance collapse, exclude; 0.2-0.3 check the R first)
   levels         brightest-half mean of mean_f / mean_r, also per session: a step in GCaMP
-                 level with flat reflectance is an acquisition change (9.54)
+                 level with flat reflectance is an acquisition change
   stale          outputs left from an earlier run for a recording the batch now skips
   rectangle      the midline-rectangle channel rule (channel_rectangle.py) on the dump's odd/even
                  mean images: which parity it calls GCaMP, and whether the batch's order agrees.
@@ -24,12 +24,12 @@ batch itself (docs/NEW_DATASET_WORKFLOW.md step 5):
   chosen order   ``channel_order`` the user set in the ROI editor for this recording, if any
                  (``chosen_order``), and whether the batch's order agrees with it.
 
-NOTHING IS EXCLUDED HERE (gui_spec.md D11): ``suggest`` is ``exclude`` / ``check`` / ``ok``
+NOTHING IS EXCLUDED HERE: ``suggest`` is ``exclude`` / ``check`` / ``ok``
 with a reason; the user decides on the QC page.
 
 Writes ``<output_root>/qc_table.csv`` and ``<output_root>/qc_levels_by_session.csv``.
 
-    conda run --no-capture-output -n wfci_gui python -u qc_cohort.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u qc_cohort.py --cohort <cohort folder>/cohort.yaml
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ from wfci_gui.logic.steps import read_batch_summary, summary_status_by_key  # no
 import channel_rectangle as rectangle  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": r"cohorts\botox_2023.yaml",
+    "cohort": None,  # path to the cohort file (or pass --cohort)
     "glitch_threshold": 1.0,       # max |field mean| (ratio) above which exclusion is suggested
     "glitch_check": 0.2,           # above this, suggest checking R against the session-mates
     "trace_tolerance_pp": 0.01,    # dump-vs-CSV max difference (pp) above which to check
@@ -84,7 +84,7 @@ def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespa
 
 
 def brightest_half_mean(image: np.ndarray) -> float:
-    """Mean of the pixels at or above the median: cortex, not the dark surround (9.54)."""
+    """Mean of the pixels at or above the median: cortex, not the dark surround."""
     values = np.asarray(image, dtype=np.float64).ravel()
     return float(values[values >= np.median(values)].mean())
 
@@ -101,7 +101,7 @@ def trace_difference(pixel_dir: Path, output_dir: Path, meta, boxes: dict) -> fl
             continue
         rows = slice(y_1 + box["row_start"] - 1 - r_crop, y_1 + box["row_end"] - r_crop)
         cols = slice(x_2 + box["col_start"] - 1 - c_crop, x_2 + box["col_end"] - c_crop)
-        # float64 before reducing: float16 sums overflow (CLAUDE.md 9.16).
+        # float64 before reducing: float16 sums overflow.
         dump_trace = np.asarray(volume[:, rows, cols], dtype=np.float64).mean(axis=(1, 2))
         csv_trace = traces[label].to_numpy(dtype=np.float64)
         n = min(len(dump_trace), len(csv_trace))
@@ -128,7 +128,7 @@ def rectangle_columns(pixel_dir: Path, roi_set: Path, params) -> dict[str, Any]:
     """The rectangle rule on the dump's mean images; empty when there is nothing to read.
 
     A labelled dump stores mean_f / mean_r and its channel_order says which parity each
-    is; a not-interleaved one (needs_channel_decision, CLAUDE.md 9.72) stores mean_odd /
+    is; a not-interleaved one (needs_channel_decision) stores mean_odd /
     mean_even. Both are (256, 256), the grid the rule is defined on.
     """
     labelled, odd_even = pixel_dir / "pixels_meta_full.npz", pixel_dir / "pixels_meta_odd_even_full.npz"
@@ -146,7 +146,7 @@ def rectangle_columns(pixel_dir: Path, roi_set: Path, params) -> dict[str, Any]:
         even = np.asarray(meta["mean_even"], dtype=np.float64)
         order = ""
     data = yaml.safe_load(roi_set.read_text(encoding="utf-8"))
-    # The recording's own rectangle when its ROI set has one (roi_editor_spec.md D18).
+    # The recording's own rectangle when its ROI set has one.
     params, source = rectangle.rectangle_params_for(roi_set, params)
     bregma = rectangle.bregma_point(int(data["bregma_row"]), int(data["bregma_col"]))
     lambda_ = rectangle.lambda_point(bregma, float(data["lambda_row_offset"]),
@@ -209,7 +209,7 @@ def qc_row(key: str, cohort, summary_status: str | None, summary_row: dict, args
             same_set = Path(str(meta["roi_set"])).name == roi_set.name
             row["geometry_ok"] = same_bregma and same_set
             if not row["geometry_ok"]:
-                reasons_exclude.append("dump geometry is not its own ROI set (9.4)")
+                reasons_exclude.append("dump geometry is not its own ROI set")
             if args.check_traces and not missing and (output_dir / "roi_fluorescence_full.csv").exists():
                 row["trace_diff_pp"] = round(trace_difference(pixel_dir, output_dir, meta, data["boxes"]), 5)
                 if row["trace_diff_pp"] > args.trace_tolerance_pp:
@@ -274,7 +274,7 @@ def main() -> None:
     print(f"\nQC table: {out}")
     print(table["suggest"].value_counts().to_string())
     print(f"\nIllumination level per session (brightest-half mean; a GCaMP step with flat "
-          f"reflectance is an acquisition change, CLAUDE.md 9.54):\n{levels.to_string(index=False)}")
+          f"reflectance is an acquisition change):\n{levels.to_string(index=False)}")
     print("Nothing was excluded: confirm the exclusions on the QC page.")
 
 

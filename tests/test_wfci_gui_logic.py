@@ -1,4 +1,4 @@
-"""wfci_gui.logic: plain pytest, no Qt (gui_spec.md 12)."""
+"""wfci_gui.logic: plain pytest, no Qt."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def test_cohort_round_trip_and_diff(tmp_path):
     (lambda d: d.pop("manifest"), "missing required"),
     (lambda d: d["acquisition"].update(frame_order="random"), "frame_order"),
     (lambda d: d["acquisition"].update(colour="blue"), "acquisition: unknown"),
-    (lambda d: d.update(exclusions=[{"recording": "230101_M1/t1", "reason": " "}]), "needs a reason"),
+    (lambda d: d.update(exclusions=[{"recording": "200101_M1/t1", "reason": " "}]), "needs a reason"),
     (lambda d: d.update(exclusions=[{"recording": "M1/t1", "reason": "x"}]), "not <yymmdd>"),
     (lambda d: d.update(overrides={"nonsense": {}}), "unknown job"),
 ])
@@ -78,7 +78,7 @@ def test_relative_paths_are_relative_to_repo(tmp_path):
 # ----------------------------------------------------------------------------- tables
 def test_table_import_accepts_and_normalises(tmp_path):
     source = tmp_path / "s.csv"
-    source.write_text("session_folder,day,timepoint,day_zero,include\nA,230101,BL,0,YES\n", encoding="utf-8")
+    source.write_text("session_folder,day,timepoint,day_zero,include\nA,200101,BL,0,YES\n", encoding="utf-8")
     frame = import_table(source, "sessions", ["BL", "3D"])
     assert frame.loc[0, "day_zero"] == "false" and frame.loc[0, "include"] == "true"
 
@@ -86,7 +86,7 @@ def test_table_import_accepts_and_normalises(tmp_path):
 def test_table_import_refuses_with_row_and_reason(tmp_path):
     source = tmp_path / "s.csv"
     source.write_text("session_folder,day,timepoint,day_zero,include\n"
-                      "A,2301,BL,false,true\nB,230102,99D,maybe,true\n", encoding="utf-8")
+                      "A,2301,BL,false,true\nB,200102,99D,maybe,true\n", encoding="utf-8")
     with pytest.raises(TableError) as error:
         import_table(source, "sessions", ["BL", "3D"])
     text = str(error.value)
@@ -96,7 +96,7 @@ def test_table_import_refuses_with_row_and_reason(tmp_path):
 
 
 def test_table_columns_and_cross_checks():
-    frame = pd.DataFrame({"day": ["230101"], "animal": ["M9"], "recording": ["t1"], "path": ["x"],
+    frame = pd.DataFrame({"day": ["200101"], "animal": ["M9"], "recording": ["t1"], "path": ["x"],
                           "n_files": ["6"], "status": ["ok"], "use": ["true"], "channel_order": ["sideways"]})
     reasons = [str(i) for i in validate_table("recordings", frame, known_animals={"M1"})]
     assert any("channel_order" in r for r in reasons)
@@ -130,12 +130,12 @@ def test_conda_discovery_order(tmp_path):
 
 
 def test_command_building():
-    command = python_command(Path("C:/c/conda.bat"), ["script.py", "--x", "1"])
+    command = python_command(Path("/c/conda.bat"), ["script.py", "--x", "1"])
     assert command[1:7] == ["run", "--no-capture-output", "-n", "wfci_gui", "python", "-u"]
     assert command[7:] == ["script.py", "--x", "1"]
-    environment = job_environment(Path("C:/repo"), {"CONNECTIVITY_STATS_COHORT": "2023"}, base={})
-    assert environment["PYTHONPATH"] == f"{Path('C:/repo/src')};{Path('C:/repo/scripts')}"
-    assert environment["CONNECTIVITY_STATS_COHORT"] == "2023"
+    environment = job_environment(Path("/repo"), {"CONNECTIVITY_STATS_COHORT": "default"}, base={})
+    assert environment["PYTHONPATH"] == f"{Path('/repo/src')};{Path('/repo/scripts')}"
+    assert environment["CONNECTIVITY_STATS_COHORT"] == "default"
     with pytest.raises(ValueError, match="cmd.exe"):
         check_arguments(["--label", "dF/F (%)"])
 
@@ -156,7 +156,7 @@ SCRIPT = textwrap.dedent('''
         mode = p.add_mutually_exclusive_group()
         mode.add_argument("--full", dest="debug", action="store_false", default=False)
         mode.add_argument("--debug", dest="debug", action="store_true")
-    cohort = os.environ.get("MY_COHORT", "2026")
+    cohort = os.environ.get("MY_COHORT", "a")
     alpha = 0.05
     if cohort == "x":
         timepoints = ["BL", "3D"]
@@ -178,7 +178,7 @@ def test_defaults_read_with_ast(tmp_path):
     assert flags["items"].nargs == "*" and flags["items"].default == ["p", "q"]
     assert flags["debug"].action == "bool_pair"
     env = {p.name: p for p in parameters.env}
-    assert env["MY_COHORT"].default == "2026"
+    assert env["MY_COHORT"].default == "a"
     assigns = {p.name: p for p in parameters.assigns}
     assert assigns["alpha"].default == 0.05 and assigns["alpha"].overridable
     assert assigns["timepoints"].conditional and assigns["timepoints"].overridable
@@ -346,8 +346,8 @@ def test_scan_statuses_aliases_and_user_columns(tmp_path):
     recordings = load_tables(cohort)["recordings"]
     status = dict(zip(recordings["day"] + "_" + recordings["animal"] + "/" + recordings["recording"],
                       recordings["status"]))
-    assert status["230101_M1/t2"] == "wrong_count"
-    assert status["230101_M2/notes"] == "not_a_recording"
+    assert status["200101_M1/t2"] == "wrong_count"
+    assert status["200101_M2/notes"] == "not_a_recording"
     assert set(recordings["animal"]) == {"M1", "M2"}        # m1_a and m1_b are aliases of M1
     # A user edit survives a rescan.
     recordings.loc[recordings["recording"] == "t1", "channel_order"] = "gcamp_first"
@@ -367,11 +367,11 @@ def test_scan_refuses_unknown_animal_folder(tmp_path):
         _scan(path, "--no-make-links")
 
 
-@pytest.mark.skipif(os.name != "nt", reason="junctions are Windows-only (spec D6)")
+@pytest.mark.skipif(os.name != "nt", reason="junctions are Windows-only")
 def test_scan_creates_junction_view(tmp_path):
     path = make_cohort(tmp_path, link_root=True)
     _scan(path)
-    link = tmp_path / "links" / "230104" / "M2" / "t1"
+    link = tmp_path / "links" / "200104" / "M2" / "t1"
     assert link.is_dir() and len(list(link.glob("*.tif"))) == 6
     _scan(path)                     # second run: existing junctions are accepted, nothing raises
     manifest = (tmp_path / "manifests" / "fake_manifest.csv").read_text(encoding="utf-8")

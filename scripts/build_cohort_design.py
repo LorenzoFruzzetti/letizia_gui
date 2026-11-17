@@ -1,19 +1,19 @@
 """Write a cohort's experimental design table from its cohort file and tables.
 
 ``design_csv`` (default ``<pixel_root>/experimental_design.csv``): one row per used recording that is not
-excluded, with the same columns as the existing design tables (scan_botox_2022/2023.py):
+excluded, with the columns the analysis scripts read:
 
     recording_id, day, animal, group, mouse_line, day_index, animal_day, days_since_day1,
     timepoint, recording, recording_index, n_days_for_animal, n_recordings_for_animal, pixel_dir
 
   * group and mouse_line come from animals.csv, timepoint and day 0 from sessions.csv;
   * day_index / days_since_day1 / recording_index use the functions of design_helpers.py,
-    so the numbering is identical to every other design table;
-  * a missing group, mouse line or timepoint raises (on purpose, as in that script).
+    so the numbering is the same in every design table;
+  * a missing group, mouse line or timepoint raises (on purpose).
 
 Adding a session later shifts that animal's day_index: rerun everything keyed on it.
 
-    conda run --no-capture-output -n wfci_gui python -u build_cohort_design.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u build_cohort_design.py --cohort <cohort folder>/cohort.yaml
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from wfci_gui.logic.cohort import (  # noqa: E402
 )
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": r"cohorts\botox_2023.yaml",
+    "cohort": None,  # path to the cohort file (or pass --cohort)
     "output": None,             # None = the cohort's design_csv (<pixel_root>/experimental_design.csv)
     "prefer_cli_args": True,
 }

@@ -1,11 +1,11 @@
-"""Every ROI-editor command (roi_editor_spec.md 6.3) and every mouse gesture.
+"""Every ROI-editor command and every mouse gesture.
 
 The controller owns the model (``model.EditorModel``) and the loaded data
 (``sources.LoadedData``); the window only draws them. A command is: record a pending
 mouse gesture, change the model, record one undo step, redraw.
 
 Command ids, labels and default shortcuts are the previous editor's (``KEY_OPS`` plus the
-other actions), with the new ones of spec 6.3 added.
+other actions), with the new editor's own commands added.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ ACTIONS = tuple(ActionSpec(op.id, op.label, op.shortcut, op.method, op.icon) for
 CHECKABLE = ("rect.show", "display.shared_scale")
 # Second bindings (an ActionSpec holds one): PgUp / PgDn page as in the viewer.
 EXTRA_SHORTCUTS = {"page.previous": "PgUp", "page.next": "PgDown"}
-# Shortcuts the new commands brought; a user binding of the same keys is dropped (spec 6.3).
+# Shortcuts the new commands brought; a user binding of the same keys is dropped.
 NEW_SHORTCUTS = ("Ctrl+O", "Ctrl+Shift+O", "Ctrl+L", "Ctrl+0")
 # Usable with no data loaded; everything else is disabled in the empty window.
 WITHOUT_DATA = {"file.open_cohort", "file.open_manifest", "file.settings", "help.controls",
@@ -228,7 +228,7 @@ class Controller:
             self.window.add_recent(data.kind, data.path)
 
     def confirm_discard(self) -> bool:
-        """D11: before new data replaces pages with unsaved edits: Save all / Discard / Cancel."""
+        """Before new data replaces pages with unsaved edits: Save all / Discard / Cancel."""
         self.flush()
         if self.model is None or not self.model.dirty_pages():
             return True
@@ -250,7 +250,7 @@ class Controller:
         self.load(sources.load_cohort(path, flags))
 
     def open_manifest(self, path: str, flags: dict | None = None) -> None:
-        """Settings from the cohort naming the manifest, else asked for (D10)."""
+        """Settings from the cohort naming the manifest, else asked for."""
         if not self.confirm_discard():
             return
         settings, cohort = sources.manifest_settings(path, flags)
@@ -313,7 +313,7 @@ class Controller:
                                           preview_only=preview_only, notes=notes))
 
     def set_frames_per_parity(self, value: int) -> None:
-        """Display dock: every page's images are read again with the new count (D4)."""
+        """Display dock: every page's images are read again with the new count."""
         if self.data is None or value == self.settings.frames_per_parity:
             return
         self.data.settings = dataclasses.replace(self.settings, frames_per_parity=int(value))
@@ -432,7 +432,7 @@ class Controller:
         self.window.refresh_rows()
 
     def rectangle_dragged(self, panel, roi, finished: bool) -> None:
-        """Live verdict while dragging (D20); the table row and the undo step on release."""
+        """Live verdict while dragging; the table row and the undo step on release."""
         if self.syncing:
             return
         state = roi.getState()

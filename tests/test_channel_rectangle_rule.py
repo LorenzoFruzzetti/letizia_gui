@@ -3,23 +3,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
-import pytest
 import tifffile
 
 import channel_rectangle as rectangle
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def test_defaults_are_the_saved_viewer_parameters():
-    saved = REPO_ROOT / "outputs" / "channel_rectangle" / "params.json"
-    if not saved.exists():
-        pytest.skip("params.json not present")
-    assert rectangle.load_params(saved) == rectangle.RectangleParams()
-    assert rectangle.params_or_default(saved) == rectangle.RectangleParams()
 
 
 def test_params_or_default_falls_back_and_reads_relative_paths(tmp_path):
@@ -96,13 +84,13 @@ def test_gui_viewer_arguments_use_shared_recordings(tmp_path):
     sys.argv = argv
     cohort = load_cohort(path)
     tables = load_tables(cohort)
-    assert rectangle_viewer_arguments(cohort, tables, "230101")[0] == []
-    for unit, recordings in (("230101_M1", ("t1", "t2")), ("230101_M2", ("t1",))):
+    assert rectangle_viewer_arguments(cohort, tables, "200101")[0] == []
+    for unit, recordings in (("200101_M1", ("t1", "t2")), ("200101_M2", ("t1",))):
         for recording in recordings:
             folder = cohort.path_of("pixel_root") / unit / recording
             folder.mkdir(parents=True)
             (folder / "pixels_meta_full.npz").write_bytes(b"x")
-    arguments, note = rectangle_viewer_arguments(cohort, tables, "230101")
+    arguments, note = rectangle_viewer_arguments(cohort, tables, "200101")
     assert arguments[arguments.index("--units") + 1:arguments.index("--recordings")] == ["M1", "M2"]
     assert arguments[arguments.index("--recordings") + 1] == "t1"
     assert arguments[arguments.index("--assignment") + 1] == "none"

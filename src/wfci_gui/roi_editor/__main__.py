@@ -2,7 +2,7 @@
 
 Run from the repository root (the VS Code launch configs "ROI editor (wfci_gui.roi_editor)"
 and "ROI editor (empty)" do). With no argument the window opens EMPTY and data is loaded
-from File > Open cohort… / Open manifest… / Recent (roi_editor_spec.md D7, D8). With
+from File > Open cohort… / Open manifest… / Recent. With
 ``--cohort`` the cohort's pages open at once, as the main GUI's step 3 passes it; with
 ``--manifest`` a manifest's (its settings from the cohort that names it, else from the
 flags below); with ``--folder`` every recording folder under those roots. Any flag below
@@ -30,8 +30,8 @@ from typing import Any
 # Edit this section to run the editor without passing CLI flags. None = nothing / the
 # cohort file's value / the editor default.
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,            # e.g. r"cohorts\botox_2023.yaml": open its pages at start
-    "manifest": None,          # e.g. r"manifests\botox_2023_manifest_rectangle.csv"
+    "cohort": None,            # a cohort file: open its pages at start
+    "manifest": None,          # a manifest CSV: open its pages at start
     "folder": None,            # list of root folders; every subfolder with images is a page
     "pattern": None,           # image glob, e.g. "*.tif"
     "frame_order": None,       # "name" | "number"

@@ -1,7 +1,7 @@
 """The only code that changes application state (GUI_DESIGN_GUIDELINES.md 2.3).
 
 Views call one method per user intent and redraw when ``changed`` is emitted. Jobs run
-one at a time as ``QProcess`` subprocesses (gui_spec.md D1, D10, section 7); their output
+one at a time as ``QProcess`` subprocesses; their output
 is streamed to the log dock and to ``<output_root>/logs/<job>_<timestamp>.log``.
 """
 
@@ -416,7 +416,7 @@ NEW_ROI_EDITOR_KEY = "roi_editor_new"
 
 
 def keep_awake(on: bool) -> None:
-    """Keep Windows from sleeping while a job runs (as run_botox_2024_overnight.ps1 does)."""
+    """Keep Windows from sleeping while a job runs (long extractions run overnight)."""
     if os.name != "nt":
         return
     es_continuous, es_system_required = 0x80000000, 0x00000001

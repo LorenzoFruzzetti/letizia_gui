@@ -1,4 +1,4 @@
-"""The GUI, headless (pytest-qt): commands are triggered directly (gui_spec.md 12)."""
+"""The GUI, headless (pytest-qt): commands are triggered directly."""
 
 from __future__ import annotations
 
@@ -112,13 +112,13 @@ def test_analysis_a_run_disabled_until_design_complete(window, tmp_path):
     path = make_cohort(tmp_path)
     _scan(path)
     cohort = load_cohort(path)
-    design = pd.DataFrame(dict(day=["230101", "230101", "230104"], animal=["M1", "M2", "M1"],
+    design = pd.DataFrame(dict(day=["200101", "200101", "200104"], animal=["M1", "M2", "M1"],
                                recording=["t1", "t1", "t1"], timepoint=["BL", "BL", "3D"],
                                group=["ctrl", "ctrl", "ctrl"]))
     cohort.path_of("design_csv").parent.mkdir(parents=True, exist_ok=True)
     design.to_csv(cohort.path_of("design_csv"), index=False)
     window.open_cohort(path)
-    window.controller.set_override("analysis_a", "stats_cohort", "2023")
+    window.controller.set_override("analysis_a", "stats_cohort", "default")
     page = window.pages["analysis_a"]
     window.show_step_view("analysis_a")
     assert not page.run_all.isEnabled()

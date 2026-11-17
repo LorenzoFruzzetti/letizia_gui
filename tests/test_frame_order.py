@@ -1,9 +1,9 @@
 """wfci.io frame_order: acquisition order for non-zero-padded frame file names.
 
-The July 2023 cohort names frames ``..._1.tif`` ... ``..._6000.tif``. A name sort gives
+Some acquisitions name frames ``..._1.tif`` ... ``..._6000.tif``. A name sort gives
 1, 10, 100, 1000, 1001, ..., so the odd/even split mixes the two interleaved channels.
 ``frame_order="number"`` sorts by the trailing integer; ``"name"`` (the default) must
-stay exactly the old lexicographic sort for every earlier cohort.
+stay exactly the lexicographic sort for zero-padded names.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def test_number_order_splits_channels_cleanly(tmp_path):
 
 def test_zero_padded_names_give_the_same_order_either_way(tmp_path):
     folder = tmp_path / "t1"
-    _write_interleaved(folder, lambda i: f"R11_{i:05d}.tif")
+    _write_interleaved(folder, lambda i: f"img_{i:05d}.tif")
     assert sorted_frame_files(folder) == sorted_frame_files(folder, frame_order="number")
 
 

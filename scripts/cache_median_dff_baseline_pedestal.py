@@ -1,11 +1,10 @@
 """Median-baseline dF/F cache with every non-BL session's channel pedestal(s) put back to BL.
 
-Why (CLAUDE.md 9.54-9.56): in the 2024 cohort the GCaMP level fell ~22-32% at
-45D/60D while its modulation in raw counts stayed constant, so F/Fbar -- and with
-it the shared component and every ROI-pair r -- was inflated by the illumination,
-not by the brain. The data say a NON-modulating part of the GCaMP light fell, so
-the matching correction is additive: take that recording's own pedestal off and
-put the animal's BL pedestal back on.
+Why: when a channel's light level changes between sessions while its modulation in
+raw counts stays constant, F/Fbar -- and with it the shared component and every
+ROI-pair r -- is changed by the illumination, not by the brain. What changed is a
+NON-modulating part of the light, so the matching correction is additive: take that
+recording's own pedestal off and put the animal's BL pedestal back on.
 
 For every recording whose timepoint is not `baseline_timepoint`, per pixel p:
 
@@ -16,16 +15,15 @@ temporal means of the animal's BL recordings (same Bregma-relative crop, so the
 images stack), and smooth a Gaussian of `offset_smoothing_px` crop pixels (0 =
 exact per pixel). Smoothing keeps the day's fine structure (vessels) and adopts
 only BL's coarse level, so a 1-2 px session misalignment does not write one
-session's vessel into the other's pedestal. In 2024 reflectance is left as it is:
-its level did not change (9.56's green control ~1.00). `pedestal_channels` picks
-which channel(s) get this correction: "gcamp" (the 2024 run), "emo" (reflectance,
-R' = R - smooth(mean_day_R) + smooth(mean_BL_R)) or "both" -- the 2023 cohort's
-reflectance level moves by up to +47 % between sessions (CLAUDE.md 9.66).
+session's vessel into the other's pedestal. `pedestal_channels` picks which
+channel(s) get this correction: "gcamp" (the default), "emo" (reflectance,
+R' = R - smooth(mean_day_R) + smooth(mean_BL_R)) or "both", for a cohort whose
+reflectance level also moves between sessions.
 
 Then exactly cache_median_dff.py's (F'/F'bar)/(R/Rbar) - 1 with the same window.
 BL recordings are unchanged, so their cache equals the uncorrected one.
 
-Two guards. The 15 recordings 9.52/9.55 found split the wrong way round have their
+Two guards. Recordings a verdict table marks as split the wrong way round have their
 two channel files swapped back first (`channel_assignment_csv`), otherwise the BL
 GCaMP pedestal would be put under the reflectance signal; a mis-assigned BL
 recording raises. And a handful of crop-edge pixels, where the sessions' pedestals
@@ -66,18 +64,18 @@ REPO_ROOT = Path(__file__).resolve().parent
 
 # Edit this section to run the cache build without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data_2024",  # <date>_<animal>/<t#>/pixels_f_gcamp_full.npy
-    "design_csv": REPO_ROOT / "pixel_data_2024" / "experimental_design_2024.csv",  # timepoint per recording
+    "pixel_root": REPO_ROOT / "pixel_data",  # <date>_<animal>/<t#>/pixels_f_gcamp_full.npy
+    "design_csv": REPO_ROOT / "pixel_data" / "experimental_design.csv",  # timepoint per recording
     "baseline_timepoint": "BL",  # Its recordings define each animal's reference pedestal.
     "offset_smoothing_px": 2.0,  # Gaussian sigma of the pedestal maps, crop pixels; 0 = exact per pixel.
     "window_s": 20.0,  # Same running-median window as the uncorrected cache (201 frames at 10 Hz).
-    "sampling_rate_hz": 10.0,  # Same as the uncorrected cache, so only the pedestal differs (see 9.55).
+    "sampling_rate_hz": 10.0,  # Same as the uncorrected cache, so only the pedestal differs.
     "tag": "blpedestal",  # File-name tag of this variant.
-    # Channel(s) whose pedestal is put back to BL: "gcamp" (2024), "emo" or "both".
+    # Channel(s) whose pedestal is put back to BL: "gcamp", "emo" or "both".
     "pedestal_channels": "gcamp",
-    # 9.52/9.55 verdicts; recordings with verdict "certain" and agrees_with_auto False
+    # Verdict table; recordings with verdict "certain" and agrees_with_auto False
     # have their two channel files swapped back. None: use the files as the batch wrote them.
-    "channel_assignment_csv": REPO_ROOT / "manifests" / "channel_assignment_2024.csv",
+    "channel_assignment_csv": None,
     "workers": 8,
     "recording_limit": None,  # None: all; positive integer: only the first N jobs (smoke test).
     "overwrite": False,
@@ -125,7 +123,7 @@ def build_one(job: dict[str, Any]) -> dict[str, Any]:
     volume_path, meta_path = cache_paths(folder, job["window_s"], job["tag"])
 
     # channels: name -> (n_time, rows, cols). A recording the batch split the wrong way
-    # round (9.52) has the two files exchanged; each pedestal must go on the REAL
+    # round has the two files exchanged; each pedestal must go on the REAL
     # channel, so they are swapped back first.
     file_of = dict(CHANNEL_FILES)
     if job["swap_channels"]:
@@ -198,7 +196,7 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser.add_argument("--sampling-rate-hz", type=float, default=defaults["sampling_rate_hz"])
     parser.add_argument("--tag", default=defaults["tag"])
     parser.add_argument("--pedestal-channels", choices=sorted(CHANNEL_CHOICES), default=defaults["pedestal_channels"])
-    # "none": no verdict file (cohorts never checked with check_channel_assignment.py).
+    # "none": no verdict file.
     parser.add_argument("--channel-assignment-csv", type=lambda value: None if value.lower() == "none" else Path(value),
                         default=defaults["channel_assignment_csv"])
     parser.add_argument("--workers", type=int, default=defaults["workers"])
@@ -218,7 +216,7 @@ def main():
     args = build_runtime_args()
     pixel_root = Path(args.pixel_root)
     n_median = median_window_frames(args.window_s, args.sampling_rate_hz)
-    # keep_default_na: the 2024 group is literally "NA" (9.53).
+    # keep_default_na: a group may be the literal string "NA".
     design = pd.read_csv(args.design_csv, dtype={"day": str}, keep_default_na=False)
     design = design[[(pixel_root / pixel_dir / "pixels_f_gcamp_full.npy").exists()
                      for pixel_dir in design["pixel_dir"]]]

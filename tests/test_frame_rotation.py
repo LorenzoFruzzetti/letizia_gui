@@ -1,4 +1,4 @@
-"""rot90_k / pattern support for the 2022 cohort (.tiff files, camera at 90 degrees)."""
+"""rot90_k / pattern support (.tiff files, camera at 90 degrees)."""
 from __future__ import annotations
 
 import numpy as np

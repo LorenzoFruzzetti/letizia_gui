@@ -1,6 +1,6 @@
 """Step 2 - ROI placement check (visual overlay).
 
-Reproduces ``step2_area_location_*.m`` / ``Antea_scripts/(3)_..._ROIposition.txt``:
+Reproduces ``step2_area_location_*.m`` / the cortical MATLAB script ``(3)_..._ROIposition.txt``:
 paint the ROI boxes onto a representative Delta F / F frame and display it, so you
 can confirm the boxes land where you expect relative to Bregma. This is a visual
 check only, not part of the numeric pipeline.

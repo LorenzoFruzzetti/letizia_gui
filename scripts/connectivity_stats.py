@@ -1,15 +1,15 @@
-"""PV group: does connectivity change after day 1? Statistics on the detrended variant.
+"""One group: does connectivity change after day 1? Statistics on the detrended variant.
 
 Input: per-recording Pearson R of `variant` (default the 20 s running-median baseline
-dF/F, CLAUDE.md 9.43) from outputs/roi_pixel_connectivity.
+dF/F) from outputs/roi_pixel_connectivity.
 
 Time axis (`time_axis`, env CONNECTIVITY_STATS_TIME_AXIS):
     "timepoint" (default): sessions are grouped by the `timepoint` class of
-        experimental_design.csv (days since the animal's day 1, CLAUDE.md 9.47). The first
-        class in `timepoints` is the baseline; 60D/77D are left out because only PV3/PV4
-        have them. Contrasts are named after the class ("3D", "15D", ...).
+        experimental_design.csv (days since the animal's day 1). The first class in
+        `timepoints` is the baseline; a class that not every animal has is left out of
+        `timepoints`. Contrasts are named after the class ("3D", "15D", ...).
     "day_index": the within-animal session number, days `baseline_day_index` ..
-        `last_day_index` (the analysis before the timepoint classes existed).
+        `last_day_index`.
 
 Everything is tested on Fisher z = arctanh(r). Session value = mean z of its recordings.
 The animal is the unit of inference; recordings only enter through the mixed model,
@@ -32,7 +32,7 @@ Region focus (env CONNECTIVITY_STATS_FOCUS, "SSp" default or "motor"): the same 
 own edges and its edges to every other region (motor also split by its hemisphere),
 written as <focus>_*.csv/.png next to the files below.
 
-Output (outputs/pv_detrended_stats/<variant>_<animals tag>_<range tag>/, e.g. _no_PV5_BL-40D):
+Output (<output_root>/<variant>_<animals tag>_<range tag>/, e.g. _no_A3_BL-30D):
     session_values.csv, metric_tests.csv, node_tests.csv, edge_tests.csv,
     metrics_by_day.png, node_strength_change.png, edge_tests.png/.svg (z, t and r change),
     mean_matrices.png/.svg and mean_matrices_uncentered.png/.svg (parula, row min/max),
@@ -67,80 +67,24 @@ connectivity_file = "roi_pixel_connectivity.npz"   # per recording: R_roi, roi_l
 # A COHORT is the (design table, connectivity root, group, animals, timepoints) bundle
 # this analysis runs on, picked with env CONNECTIVITY_STATS_COHORT. Every other parameter below is
 # shared, so the tests, figures and file names are the same for every cohort.
-#   "2026" (default, unchanged): the PV group of pixel_data.
-#   "2024": the BOTOX_2024 cohort, dumps in pixel_data_2024, design built by
-#           build_design_2024.py (CLAUDE.md 9.50-9.60).
-#   "2023": the July 2023 PV-CRE BoNT cohort, dumps in pixel_data_2023 (CLAUDE.md 9.64).
-#   "botox_2022": the 2022 cohort on E: (CLAUDE.md 9.61/9.62). Its connectivity was run
-#           with --roi-set-dir roi_sets/rebuilt, hence the _roi_rebuilt variant suffix.
-cohort = os.environ.get("CONNECTIVITY_STATS_COHORT", "2026")
+#   "default": a placeholder entry with neutral paths and no exclusions.
+cohort = os.environ.get("CONNECTIVITY_STATS_COHORT", "default")
 include_animals = None                   # None = every animal of `group`
 exclude_days = []                        # session days dropped before anything else
 default_variant = "pixels_median_dff_20s_full"
 default_time_axis = "timepoint"
 default_relative_mode = None             # None: ratio without GSR, difference with GSR
-if cohort == "2026":
-    design_path = repo_root / "pixel_data" / "experimental_design.csv"
+if cohort == "default":
+    design_path = repo_root / "experimental_design.csv"
     connectivity_root = repo_root / "outputs" / "roi_pixel_connectivity"
-    output_root = repo_root / "outputs" / "pv_detrended_stats"
-    group = "PV"
-    exclude_animals = ["PV5"]
-    timepoints = ["BL", "3D", "15D", "30D", "40D"]  # first = baseline; 60D/77D have only PV3/PV4
-    # Single-frame reflectance glitches (emo drops to the GCaMP level): CLAUDE.md 9.23, 9.45.
-    exclude_recordings = ["260828_PV7/t2", "260522_PV4/t3"]
-elif cohort == "2024":
-    design_path = repo_root / "pixel_data_2024" / "experimental_design_2024.csv"
-    connectivity_root = repo_root / "outputs" / "roi_pixel_connectivity_2024"
-    # Own tree: the file names inside are shared between cohorts, so one would otherwise
-    # overwrite the other's tables and figures (as the signal modes would have, CLAUDE.md 9.22).
-    output_root = repo_root / "outputs" / "detrended_stats_2024"
-    # The 2024 names carry no group, so every animal sits in the placeholder "NA"
-    # (CLAUDE.md 9.50): this is a WITHIN-cohort change-over-time analysis and cannot
-    # compare groups. Each full name is a distinct mouse.
-    group = "NA"
-    # The tests require every animal x timepoint, and late sessions are missing for two
-    # mice (empty source folders): SP20_R00 from 60D, SP20_000 from 90D. So there are
-    # two complete designs, picked with env CONNECTIVITY_STATS_RANGE_2024:
-    #   "BL-45D"  (default): all 8 mice, BL..45D -- the original run, unchanged;
-    #   "BL-120D": the 6 mice recorded at every timepoint, BL..120D.
-    range_2024 = os.environ.get("CONNECTIVITY_STATS_RANGE_2024", "BL-45D")
-    if range_2024 == "BL-45D":
-        exclude_animals = []
-        timepoints = ["BL", "BL2", "3D", "15D", "30D", "45D"]
-    elif range_2024 == "BL-120D":
-        exclude_animals = ["SP20_000", "SP20_R00"]
-        timepoints = ["BL", "BL2", "3D", "15D", "30D", "45D", "60D",
-                      "75D", "90D", "105D", "120D"]
-    else:
-        raise ValueError(f"CONNECTIVITY_STATS_RANGE_2024 must be 'BL-45D' or 'BL-120D', not {range_2024!r}")
-    exclude_recordings = []
-elif cohort == "botox_2022":
-    design_path = Path(r"E:\Laura_botox_2022_pixeldata\experimental_design.csv")
-    connectivity_root = repo_root / "outputs" / "botox_2022_roi_pixel_connectivity"
-    output_root = repo_root / "outputs" / "botox_2022_detrended_stats"
-    group = "PV"
-    default_variant = "pixels_median_dff_20s_full_roi_rebuilt"
-    # R10_NS has no 30D recordings (221213, CLAUDE.md 9.61), and the paired tests need
-    # every animal at every time point.
-    exclude_animals = ["R10_NS"]
-    exclude_recordings = []
-    # Two baseline sessions share the timepoint class BL; only the first (221111) is kept.
-    exclude_days = ["221114"]
-    timepoints = ["BL", "3D", "15D", "30D"]
-    default_relative_mode = "difference"
-elif cohort == "2023":
-    # July 2023 PV-CRE BoNT cohort (CLAUDE.md 9.64): dumps in pixel_data_2023, design written
-    # by scan_botox_2023.py. Group is the placeholder "NA", as for 2024, so this is a
-    # within-cohort change over time. All 5 mice have BL/3D/15D/30D, so nothing is excluded.
-    design_path = repo_root / "pixel_data_2023" / "experimental_design.csv"
-    connectivity_root = repo_root / "outputs" / "roi_pixel_connectivity_2023"
-    output_root = repo_root / "outputs" / "detrended_stats_2023"
+    output_root = repo_root / "outputs" / "connectivity_stats"
+    # Group label of the analysed animals in the design table's `group` column.
     group = "NA"
     exclude_animals = []
-    exclude_recordings = []
-    timepoints = ["BL", "3D", "15D", "30D"]
+    timepoints = ["BL", "3D", "15D", "30D"]  # first = baseline
+    exclude_recordings = []                  # "<day>_<animal>/<t#>" keys
 else:
-    raise ValueError(f"CONNECTIVITY_STATS_COHORT must be '2026', '2024', '2023' or 'botox_2022', not {cohort!r}")
+    raise ValueError(f"CONNECTIVITY_STATS_COHORT must be 'default', not {cohort!r}")
 
 # env CONNECTIVITY_STATS_OUTPUT_ROOT puts this run's output folder somewhere else (e.g. a separate
 # comparison) without touching the cohort's usual one.
@@ -152,24 +96,24 @@ variant = os.environ.get("CONNECTIVITY_STATS_VARIANT", default_variant)
 # "timepoint": compare the timepoint classes (BL, 3D, ...); "day_index": the session number.
 time_axis = os.environ.get("CONNECTIVITY_STATS_TIME_AXIS", default_time_axis)
 baseline_day_index = 1                   # time_axis "day_index" only
-# time_axis "day_index" only; day 5 has only PV3/PV4 (2026) and is missing for R10_NS (2022).
+# time_axis "day_index" only; the last session number that every animal has.
 last_day_index = 4
 # How the relative-r figures show a later day (env CONNECTIVITY_STATS_RELATIVE_MODE): "ratio" = r / day 1,
 # "difference" = r - day 1. None: ratio without GSR, difference with GSR (day-1 r ~ 0 after GSR).
 relative_mode = os.environ.get("CONNECTIVITY_STATS_RELATIVE_MODE", default_relative_mode)
 fdr_alpha = 0.05                         # Benjamini-Hochberg level
 uncorrected_alpha = 0.05                 # marks edges in the figure
-color_limit_percentile = 99.0            # centred colour scale, as test_pv_antea_mean.py
+color_limit_percentile = 99.0            # centred colour scale
 fixed_color_limits = (-1.0, 1.0)         # mean_matrices_fixed.*: both rows (r and difference in r)
-# Colormap of mean_matrices_uncentered.* (each row its own [min, max]). Was parula; RdBu_r
-# (blue = row min, red = row max) on request. Not centred, so white is the row's
+# Colormap of mean_matrices_uncentered.* (each row its own [min, max]): RdBu_r
+# (blue = row min, red = row max). Not centred, so white is the row's
 # mid-range, not 0.
 uncentered_colormap = "RdBu_r"
-nbs_primary_threshold = 2.5              # NBS edge cut-off on the paired t (df = n_animals - 1), as test_nbs_*.py
+nbs_primary_threshold = 2.5              # NBS edge cut-off on the paired t (df = n_animals - 1)
 nbs_alpha = 0.05                         # NBS component FWER level
 nbs_permutations = 5000                  # upper bound; the 2^n_animals sign flips are enumerated when fewer
-# Our ROI label -> the label Antea's script (5) uses for it (side is the _L/_R suffix).
-antea_label_of = {
+# Our ROI label -> the anatomical label shown in tables and figures (side is the _L/_R suffix).
+display_label_of = {
     "M2L_alta": "MOs-a_L", "M2L_bassa": "MOs-p_L", "M1L_alta": "MOp-a_L", "M1L_bassa": "MOp-p_L",
     "BFDL": "SSp-bfd_L", "TrL": "SSp-tr_L", "FLL": "SSp-fL_L", "HLL": "SSp-hl_L",
     "RSL_alta": "RSP_L", "V1aL": "VISa_L", "V1L": "VISp_L",
@@ -203,13 +147,13 @@ if include_animals is not None:
 elif exclude_animals:
     animals_tag = f"no_{'_'.join(exclude_animals)}"
 else:
-    animals_tag = "all_animals"          # nothing excluded: 2024 BL-45D keeps all 8 mice
+    animals_tag = "all_animals"          # nothing excluded
 output_dir = output_root / f"{variant}_{animals_tag}_{range_tag}"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------- loading
-# keep_default_na=False: the 2024 cohort's group is the literal string "NA" (no group
-# assigned yet, CLAUDE.md 9.50), which pandas would otherwise read as NaN -- the
+# keep_default_na=False: a group may be the literal string "NA" (no group
+# assigned yet), which pandas would otherwise read as NaN -- the
 # `group ==` filter below would then match nothing and the design would come out empty.
 # Nothing here depends on a CSV cell being NaN rather than "" (the two notna() calls
 # downstream are on computed columns).
@@ -254,11 +198,11 @@ for row in design.itertuples():
     recording_z.append(np.arctanh(r))
 recording_z = np.array(recording_z)
 n_rois = len(roi_labels)
-tick_labels = [antea_label_of[label] for label in roi_labels]
+tick_labels = [display_label_of[label] for label in roi_labels]
 print(f"{variant}: {len(design)} recordings, animals {animals}, time points {[day_label[d] for d in days]}")
 
 # ---------------------------------------------------------------- summary metrics
-# Edge masks over the upper triangle; side from the Antea label suffix.
+# Edge masks over the upper triangle; side from the display label suffix.
 side = np.array([label[-1] for label in tick_labels])
 twin_index = np.array([tick_labels.index(label[:-1] + ("R" if label[-1] == "L" else "L"))
                        for label in tick_labels])
@@ -319,7 +263,7 @@ def paired_tests(table):
 def mixed_model_tests(column):
     """Recording-level z ~ C(day_index), animal intercept + session component; Wald per contrast and omnibus.
 
-    Fit as in test_drift_vs_design.py (CLAUDE.md 9.30): lbfgs, then powell, then nm,
+    Fit with lbfgs, then powell, then nm (one optimizer alone can stop at a false optimum),
     and an error if none converges.
     """
     data = recording_values[["animal", "session", "day_index", column]].rename(columns={column: "value"})
@@ -387,7 +331,7 @@ node_tests.to_csv(output_dir / "node_tests.csv", index=False)
 # ---------------------------------------------------------------- edges
 edge_results = paired_tests(session_edge_z)
 # session_edge_r: (n_animals, n_days, n_edges) plain mean of Pearson r over the session's
-# recordings (Antea's script 5). Display only: the tests stay on z.
+# recordings (as the reference MATLAB analysis does). Display only: the tests stay on z.
 session_edge_r = np.array([[np.tanh(edge_z[((design["animal"] == a) & (design["day_index"] == d)).to_numpy()]).mean(axis=0)
                             for d in days] for a in animals])
 edge_difference_r = {contrast: difference.mean(axis=0)
@@ -527,7 +471,7 @@ plt.close(fig)
 
 # ---------------------------------------------------------------- figure: edges
 # Row 1: mean difference in z; row 2: paired t; row 3: mean difference in Pearson r (session
-# mean r, as Antea's script 5). Dot: p < uncorrected_alpha; star: q < fdr_alpha (both from z).
+# mean r, as the reference MATLAB analysis does). Dot: p < uncorrected_alpha; star: q < fdr_alpha (both from z).
 row_specs = [("mean_difference_z", "mean change in Fisher z"), ("paired_t", "paired t (df = %d)" % (len(animals) - 1)),
              ("mean_difference_r", "mean change in Pearson r")]
 fig, axes = plt.subplots(len(row_specs), len(contrasts), figsize=(4.6 * len(contrasts), 4.7 * len(row_specs)),
@@ -557,7 +501,7 @@ fig.savefig(output_dir / "edge_tests.svg")
 plt.close(fig)
 
 # ---------------------------------------------------------------- figure: mean matrices by day
-# As test_pv_antea_mean.py, on this script's dataset: top row the group mean Pearson r per
+# Top row: the group mean Pearson r per
 # day (equal-weight mean of the animals' session mean r), bottom row day N - day 1. One
 # colour scale per row, centred on 0 at the color_limit_percentile of |off-diagonal value|.
 # group_r: (n_days, n_edges); group_difference_r: (n_later_days, n_edges)
@@ -575,7 +519,7 @@ def edge_matrix(edge_values, diagonal):
 
 # Two versions: "centered" (RdBu_r, each row centred on 0 at the color_limit_percentile of
 # |value|; mean_matrices.*) and "uncentered" (`uncentered_colormap`, each row its own [min, max] of the
-# off-diagonal values, as test_pv_antea_mean.py with centered_scale False;
+# off-diagonal values;
 # mean_matrices_uncentered.*), plus "fixed" (RdBu_r, both rows at `fixed_color_limits`, so
 # figures are comparable across variants and cohorts; mean_matrices_fixed.*) and
 # "per_panel" (parula, every heatmap its own [min, max] and colorbar; mean_matrices_per_panel.*).
@@ -603,7 +547,7 @@ for scale in ("centered", "uncentered", "fixed", "per_panel"):
     fig, axes = plt.subplots(2, len(days), figsize=(4.6 * len(days), 9.4),
                              constrained_layout=True, squeeze=False)
     # Per-panel colorbars take width, so those titles name the animal count, not the animals.
-    # Long names (2023/2024 cohorts) overlap the neighbouring panel; 40 characters fits.
+    # Long animal names overlap the neighbouring panel; 40 characters fits.
     joined_animals = "+".join(animals)
     animals_title = (f"mean of {len(animals)} animals" if per_panel or len(joined_animals) > 40
                      else f"mean {joined_animals}")
@@ -633,12 +577,12 @@ for scale in ("centered", "uncentered", "fixed", "per_panel"):
             ax.set_xticks(range(n_rois), tick_labels, rotation=90, fontsize=5)
             ax.set_yticks(range(n_rois), tick_labels, fontsize=5)
     if per_panel:
-        fig.suptitle(f"{variant}: PV group mean of {'+'.join(animals)} (plain mean of Pearson r, Antea script 5). "
+        fig.suptitle(f"{variant}: group mean of {'+'.join(animals)} (plain mean of Pearson r). "
                      f"Each panel its own scale ({scale_rule}, diagonal ignored)")
     else:
         fig.colorbar(image_matrix, ax=axes[0, :], shrink=0.8, extend=extend, label="mean Pearson r")
         fig.colorbar(image_difference, ax=axes[1, 1:], shrink=0.8, extend=extend, label="difference in Pearson r")
-        fig.suptitle(f"{variant}: PV group mean of {'+'.join(animals)} (plain mean of Pearson r, Antea script 5).\n"
+        fig.suptitle(f"{variant}: group mean of {'+'.join(animals)} (plain mean of Pearson r).\n"
                      f"Shared scales ({scale_rule}): r {matrix_limits[0]:.2f}..{matrix_limits[1]:.2f}, "
                      f"difference {difference_limits[0]:.2f}..{difference_limits[1]:.2f} (diagonal ignored)")
     fig.savefig(output_dir / f"mean_matrices{file_tag}.png", dpi=200)
@@ -757,7 +701,7 @@ plt.close(fig)
 
 # ---------------------------------------------------------------- figure: focus matrices
 # Top: group mean r between focus ROIs per day (plain mean of r over recordings, then
-# animals, as Antea's script 5). Bottom: mean change in z vs day 1; dot p < 0.05,
+# animals, as the reference MATLAB analysis does). Bottom: mean change in z vs day 1; dot p < 0.05,
 # star BH q < fdr_alpha within the focus family.
 session_r = {(a, d): np.tanh(recording_z[((design["animal"] == a) & (design["day_index"] == d)).to_numpy()]).mean(axis=0)
              for a in animals for d in days}
@@ -838,7 +782,7 @@ print(f"saved {focus_prefix} figures in {output_dir}")
 
 # ================================================================ relative to baseline, in Pearson r
 # Display only: each animal's session mean r (plain mean of r over the metric's edges and
-# the session's recordings, as Antea's script 5) divided by its own day-1 value, so day 1
+# the session's recordings, as the reference MATLAB analysis does) divided by its own day-1 value, so day 1
 # is 1 for every animal. The black line is the mean of the animals' ratios. p-values are
 # still the Fisher-z tests above (paired / mixed model): r is bounded at 1 and its
 # variance shrinks near it, so it is the right scale to look at but not to test on.

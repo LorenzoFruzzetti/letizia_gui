@@ -1,4 +1,4 @@
-"""One image panel of the ROI editor: ``ParityPanel`` (roi_editor_spec.md 6.2).
+"""One image panel of the ROI editor: ``ParityPanel``.
 
 The window shows two, titled only "odd" and "even" (no channel label, to avoid bias).
 Each draws the same page model: the image, the boxes (``pg.RectROI``, whole-pixel snap,
@@ -84,7 +84,7 @@ class ParityPanel(pg.PlotWidget):
             self.note.setText(note)
             self.note.setVisible(True)
             return
-        # Image before any transform (CLAUDE.md 9.33); 1 px = 1 grid unit.
+        # Image before any transform; 1 px = 1 grid unit.
         self.image_item.setImage(image, autoLevels=False)
         self.note.setVisible(False)
 

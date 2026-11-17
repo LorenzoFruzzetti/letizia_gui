@@ -1,4 +1,4 @@
-"""Main window: qtkit ShellWindow with the step list, step pages and the job dock (spec 8)."""
+"""Main window: qtkit ShellWindow with the step list, step pages and the job dock."""
 
 from __future__ import annotations
 
@@ -229,7 +229,7 @@ class MainWindow(ShellWindow):
         self.refresh()
 
     def save_cohort(self) -> bool:
-        """Show the diff against the file on disk, then save (spec 4.1)."""
+        """Show the diff against the file on disk, then save."""
         state = self.controller.state
         if state.cohort is None:
             return False
@@ -330,7 +330,7 @@ class MainWindow(ShellWindow):
 
     def about(self) -> None:
         QtWidgets.QMessageBox.about(self, "About", f"<b>WFCI cohort pipeline</b> {__version__}<br>"
-                                    f"Repository: {html.escape(str(REPO_ROOT))}<br>Spec: gui_spec.md")
+                                    f"Repository: {html.escape(str(REPO_ROOT))}")
 
     def closeEvent(self, event):
         if self.controller.queue.busy:
@@ -358,12 +358,12 @@ class NewCohortDialog(QtWidgets.QDialog):
         self.resize(640, 320)
         form = QtWidgets.QFormLayout(self)
         self.name = QtWidgets.QLineEdit()
-        self.name.setPlaceholderText("e.g. botox_2025 (letters, digits, _ and -)")
+        self.name.setPlaceholderText("e.g. cohort_a (letters, digits, _ and -)")
         self.raw_root = self._path_row(form, "Raw data folder")
         self.link_root = self._path_row(form, "Junction view folder (optional)")
         form.insertRow(0, "Name", self.name)
         self.rate = QtWidgets.QLineEdit()
-        self.rate.setPlaceholderText("per channel: 10 (2026) or 25 (2022-2024); blank = read it in step 2")
+        self.rate.setPlaceholderText("per channel, e.g. 10 or 25; blank = read it in step 2")
         form.addRow("Frame rate (Hz)", self.rate)
         self.frame_order = QtWidgets.QComboBox()
         self.frame_order.addItems(["", "name", "number"])

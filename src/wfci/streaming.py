@@ -163,7 +163,7 @@ def stream_trial_roi(
         ``baselines``/``frame``/``close`` methods). When given, every frame's raw
         and corrected pixels are written to disk from *inside* pass 2 -- no extra
         read, no extra resident array, so the two-pass and one-frame invariants
-        (I10, I2) are unaffected. None (the default) is the pixel-free path.
+        (two passes, one frame in memory) are unaffected. None (the default) is the pixel-free path.
     baselines:
         ``(mean_f, mean_r)`` already computed -- pass 1 done elsewhere. The
         single-read channel selection (:func:`prepare_interleaved_trial`) sums the
@@ -176,7 +176,7 @@ def stream_trial_roi(
         # A post-GSR per-pixel stack does not exist in this path by construction:
         # _stream_pass2_gsr accumulates only the sufficient statistics (a, b,
         # g_vec) precisely so it never has to hold one, and materialising it would
-        # need a third pass over the file -- breaking invariant I10. Dumping the
+        # need a third pass over the file -- breaking the two-pass invariant. Dumping the
         # PRE-GSR pixels under a name that implies otherwise would be worse than
         # refusing, so refuse.
         raise ValueError(
@@ -303,8 +303,7 @@ def _stream_pass2_gsr(
     ``mean_B(b)``).
 
     So GSR costs two extra ``[y, x]`` images and two ``[time]`` vectors, and the
-    pass count stays at TWO -- which the decode-count test in
-    ``tests/test_efficiency_invariants.py`` enforces.
+    pass count stays at TWO.
 
     The precondition is that the invalid-pixel set is **static over time**; it is
     checked here rather than assumed. See :func:`_check_static_nans`.
@@ -416,7 +415,7 @@ def _check_static_nans(nan_count: np.ndarray, n_time: int) -> None:
     partially-NaN pixel means something else produced NaNs mid-recording (e.g. a
     zero in ``emo(t)`` making the ratio non-finite).
 
-    The in-memory result is the one that is right (MERGING_PLAN.md P1), so this
+    The in-memory result is the reference, so this
     raises rather than silently returning different numbers.
     """
     partial = (nan_count > 0) & (nan_count < n_time)
@@ -540,7 +539,7 @@ def run_streaming_stimulated(
 
 
 # ---------------------------------------------------------------------------
-# Single-read channel selection (channel_selection_spec.md)
+# Single-read channel selection
 # ---------------------------------------------------------------------------
 
 # channel_order recorded when a not_interleaved block is stored by position only.
@@ -603,7 +602,7 @@ class PreparedTrial:
 
 
 def channel_choice_meta(choices: list[BlockChannelChoice]) -> dict:
-    """The spec's metadata fields for a list of block choices (see PreparedTrial.meta)."""
+    """The channel-choice metadata fields for a list of block choices (see PreparedTrial.meta)."""
     def joined(values, fmt=str):
         values = list(values)
         return values[0] if len(values) == 1 else ";".join(fmt(v) for v in values)

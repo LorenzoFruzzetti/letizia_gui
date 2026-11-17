@@ -1,7 +1,7 @@
 """Step 3 - ROI time-series extraction and functional connectivity.
 
 Reproduces ``step3_ROI_functional_connectivity*.m`` (cerebellar) and
-``Antea_scripts/(4)_FOV128x128_corr_SCRIPT.txt`` (cortical) -- the two are the
+the cortical MATLAB script ``(4)_FOV128x128_corr_SCRIPT.txt`` -- the two are the
 same computation over a different number of boxes:
   1. average Delta F / F inside each ROI box (nanmean over rows and cols) to get
      one time-series per region,

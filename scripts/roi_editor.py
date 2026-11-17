@@ -1,6 +1,6 @@
 """Interactive ROI / Bregma editor for interleaved wide-field folders.
 
-This is a *utility* study script (P2 boundary: policy and UI live here, the maths
+This is a *utility* study script (policy and UI live here, the maths
 lives in ``wfci``). It answers the one question the run scripts cannot answer for
 you -- **do the ROI boxes sit on the right anatomy for THIS animal?** -- and lets
 you fix it by dragging, then writes the result to a file the run scripts load.
@@ -17,7 +17,7 @@ What it writes: a **ROI set** file
 ----------------------------------
 One YAML per session (or one shared file for all of them)::
 
-    name: 260611_R1
+    name: 200101_A1
     grid: [128, 128]            # the FINAL frame these offsets were drawn for
     source: drawn with roi_editor.py ...
     bregma_row: 120             # per-animal Bregma, in RUN_CONFIG units (2 x grid)
@@ -104,8 +104,8 @@ boxes were drawn for that recording and are kept. `c` overrides either way.
 Run it (``--no-capture-output`` matters: plain ``conda run`` holds every print until
 the process exits, so an interactive script looks like it is doing nothing):
     conda run --no-capture-output -n wfci_gui python roi_editor.py       # uses RUN_CONFIG
-    conda run --no-capture-output -n wfci_gui python roi_editor.py --folders "\\\\host\\share\\...\\R1\\t1"
-    conda run --no-capture-output -n wfci_gui python roi_editor.py --manifest manifests\\botox_restani_manifest.csv --scope recording
+    conda run --no-capture-output -n wfci_gui python roi_editor.py --folders "\\\\host\\share\\...\\A1\\t1"
+    conda run --no-capture-output -n wfci_gui python roi_editor.py --manifest manifest.csv --scope recording
 From VS Code: the "ROI editor (roi_editor.py)" launch config (external terminal).
 
 This script NEVER runs the analysis -- it only draws geometry and writes a file. The
@@ -169,9 +169,9 @@ from wfci import (
 # Edit this section to run without CLI flags.
 # ---------------------------------------------------------------------------
 RUN_CONFIG: dict[str, Any] = {
-    # Where the sessions come from. Give a manifest (from scan_botox_dataset.py)
+    # Where the sessions come from. Give a manifest (from scan_cohort.py)
     # OR set it to None and list folders explicitly below.
-    "manifest": None, #r"manifests\botox_restani_manifest.csv",
+    "manifest": None,
     # Manifest only: one editor page per animal ("animal" -- previews that
     # animal's FIRST recording, which is what the per-animal Bregma applies to)
     # or one page per t# recording ("recording" -- check every folder's first
@@ -179,21 +179,10 @@ RUN_CONFIG: dict[str, Any] = {
     "scope": "animal",
     # Used when "manifest" is None AND "image_dir" is None: the interleaved folders to
     # inspect (decoded on the fly, so the source disk must be connected).
-    # Current: the 2024 cohort, one session per mouse, through the junction tree
-    # C:\Users\utente\Documents\letizia\WF_2024_links\BOTOX_2024\<yymmdd>\<animal>
-    # -> D:\BOTOX_2024\<MMDDYYYY_label>\<animal>. The junctions exist because
-    # folder_key takes the LAST THREE path parts, so a raw D: path would key as
-    # 01152024_BASELINE_2_SP20_000_t1 instead of 240115_SP20_000_t1 (CLAUDE.md 9.50).
-    # The cohort moved G: -> D: and the old H:\WF_2026_links tree is gone.
-    # Every page is already baked into "image_dir" below, which is the faster route.
-    # Previous: H:\WF_2026_links\BOTOX_2024\240108 (G: era), and before that 261012
-    # Nan + D:\BOTOX_RESTANI\RT\261014 R8/R9/T15/T16 (CLAUDE.md 9.49).
-    "folders": [
-        rf"C:\Users\utente\Documents\letizia\WF_2024_links\BOTOX_2024\240115\{animal}\t{i}"
-        for animal in ("SP20_000", "SP20_R00", "SP20_RR0", "SP20_RRR",
-                       "SP21_000", "SP21_R00", "SP21_RR0", "SP21_RRR")
-        for i in range(1, 6)
-    ],
+    # folder_key takes the LAST THREE path parts (<yymmdd>\<animal>\<t#>), so raw
+    # folders named any other way are given through the cohort's junction tree.
+    # Baking the pages into "image_dir" below is the faster route.
+    "folders": [],
     # Pipeline whose ROI atlas is the starting layout (and whose downsampling
     # defines the preview grid). "cortical_gsr" carries the 22-box CORTEX_22
     # atlas (M2/M1/BFD/Tr/FL/HL/RS/V1a/V1, left then right) -- the layout the
@@ -223,10 +212,10 @@ RUN_CONFIG: dict[str, Any] = {
     # reference: the atlas as shipped is declared to be drawn at this distance, and
     # dragging Lambda to D rescales every box by D / this. Only the starting value
     # lives here; a ROI set that carries lambda_row_offset overrides it.
-    # 55 is the reference every rebuilt set uses (CLAUDE.md 9.2).
+    # 55 is the reference every rebuilt set uses.
     "lambda_offset": 55,
     # Which side of Bregma Lambda lies on in the IMAGE. False (default): below it --
-    # posterior is down, as in every 2026 recording. True: above it, for a camera
+    # posterior is down, the usual camera orientation. True: above it, for a camera
     # that recorded the head the other way up; the constellation is then the up-down
     # mirror image about Bregma (M2 below Bregma, V1 above). Applies to every page
     # that is NOT opened from its own saved set (those keep the orientation they were
@@ -239,9 +228,9 @@ RUN_CONFIG: dict[str, Any] = {
     # to cover a fixed fraction of each animal's cortex rather than a fixed area.
     "lambda_scales_box_size": False,
     # True (default): editing one box of a bilateral pair moves its twin to the exact
-    # mirror image, so a layout cannot leave the editor asymmetric. Every ROI set drawn
-    # before this lock existed lost its mirror symmetry on V1 and M2 by 2-3 px, always
-    # on one hemisphere, and 'c' then propagated the slip to every later page.
+    # mirror image, so a layout cannot leave the editor asymmetric. Without it, a
+    # one-hemisphere nudge breaks the mirror symmetry by a few px, and 'c' then
+    # propagates the slip to every later page.
     # Turn it off ('m' in the window, or --no-mirror-lock) only to draw a deliberately
     # one-sided layout.
     "mirror_lock": True,
@@ -262,35 +251,28 @@ RUN_CONFIG: dict[str, Any] = {
     # Seed EVERY session from this one ROI set instead of the profile's atlas
     # (e.g. the shared file, to adjust it per animal). None = profile atlas.
     # This is ONE file for every page, so it must be changed together with
-    # "image_pattern" below when moving to the next mouse -- the 2024 mice differ in
-    # Bregma, so one animal's layout is a poor guess for another. (batch_roi_select.py
-    # takes a {animal: path} dict instead and does all 8 in one window; use it to draw
-    # the whole cohort at once.) Current: SP20_000's own 240108 BASELINE layout as
-    # rebuilt, so its later sessions open at the right scale and only Bregma moves.
-    # (Previous value: r"roi_sets/rebuilt/260908_R8_t1.yaml" for 261012/261014.)
-    "start_from": r"roi_sets/rebuilt/240108_SP20_000_t1.yaml",
+    # "image_pattern" below when moving to the next mouse -- mice differ in Bregma,
+    # so one animal's layout is a poor guess for another. A good choice is the
+    # animal's own baseline layout as rebuilt, so its later sessions open at the
+    # right scale and only Bregma moves.
+    "start_from": None,
     # Pre-computed 128×128 anatomy TIFFs, one per session, named <key>.tif.
     # When set, sessions are built directly from these images -- no interleaved
     # recording folder is needed. Overrides "manifest" and "folders".
-    # roi_sets/alignment_images already holds one image per recorded session.
-    # Current: roi_sets\reviewed\alignment_images, every session baked so far (925 pages:
-    # 2026 cohorts + all 275 of the 2024 cohort, baked by bake_alignment_images.py) --
-    # no source disk needed while drawing. Each page opens on its own roi_sets\reviewed
-    # set, else its roi_sets\rebuilt set, else "start_from", else the atlas.
+    # Images baked by bake_alignment_images.py need no source disk while drawing.
+    # Each page opens on its own roi_sets\reviewed set, else its roi_sets\rebuilt
+    # set, else "start_from", else the atlas.
     # Set to None to use "folders" again.
     "image_dir": r"roi_sets\reviewed\alignment_images",
     # Which images in image_dir become pages (glob on the <key>.tif name), sorted by
     # name -- so an animal-only glob orders that mouse's pages by date, which is what
     # makes 'c' (copy previous page) carry a layout from one session to the next.
-    # Current: ONE 2024 mouse, all 7 sessions, 35 pages. The first 5 (240108) already
-    # have sets and open as drawn -- they are the reference to 'c' from; 240115 onwards
-    # open on "start_from" above, so only Bregma needs placing, then 'c' to t2-t5.
-    # CHANGE BOTH THIS AND "start_from" together, once per mouse:
-    #   SP20_000, SP20_R00, SP20_RR0, SP20_RRR, SP21_000, SP21_R00, SP21_RR0, SP21_RRR
-    # (8 distinct mice -- never merged on the SP20/SP21 prefix, CLAUDE.md 9.50.)
-    # "24*.tif" = all 275 of the 2024 cohort, but then pages run day-major, so 'c'
-    # would copy across animals. Previous: "240108_*.tif", "261009_PV*.tif".
-    "image_pattern": "*_SP20_000_t*.tif",
+    # For one mouse use "*_<animal>_t*.tif": pages that already have sets open as
+    # drawn and are the reference to 'c' from; the others open on "start_from"
+    # above, so only Bregma needs placing, then 'c' to t2-t5. Change this and
+    # "start_from" together, once per mouse. A glob over every animal runs the
+    # pages day-major, so 'c' would copy across animals.
+    "image_pattern": "*.tif",
     "prefer_cli_args": True,
 }
 
@@ -370,8 +352,8 @@ def save_roi_set(
 
     ``lambda_above_bregma`` is written ONLY when True, so a normally oriented set is
     byte-identical to what earlier versions wrote. ``lambda_row_offset`` stays a
-    positive DISTANCE either way: rebuild_roi_sets.py, pixel_roi_editor.py and the
-    pixel detectors divide by it as a scale ruler, and a signed value would turn
+    positive DISTANCE either way: rebuild_roi_sets.py and the
+    pixel scripts divide by it as a scale ruler, and a signed value would turn
     their rescale into a point reflection.
 
     ``lambda_angle_deg`` is the rotation of Lambda and the whole constellation around
@@ -493,12 +475,12 @@ def preview_image(
     number of pixels here as it does in the analysis. Only ``n_frames`` images
     (plus the two the channel split reads) are decoded off the network share.
 
-    ``pattern`` is the raw-image glob (``"*.tiff"`` for the 2022 Basler files) and
+    ``pattern`` is the raw-image glob (e.g. ``"*.tiff"``) and
     ``rot90_k`` the quarter-turn rotation applied to every frame before resizing
     (see :func:`wfci.io.iter_folder_frames`). The pipeline must use the same
     rotation, or the Bregma placed here lands elsewhere on its frames.
     ``frame_order`` is how acquisition order is read off the file names
-    (:func:`wfci.io.sorted_frame_files`; ``"number"`` for the July 2023 cohort's
+    (:func:`wfci.io.sorted_frame_files`; ``"number"`` for
     non-zero-padded names).
     """
     gcamp_files, _emo_files = interleaved_channel_files(folder, pattern=pattern,
@@ -742,7 +724,7 @@ def lambda_position(y_1: int, x_2: int, lambda_offset: int, lambda_sign: int,
 class Session:
     """One editor page: a folder to preview and the geometry being edited."""
 
-    key: str                      # filename stem of its ROI set, e.g. 260611_R1
+    key: str                      # filename stem of its ROI set, e.g. 200101_A1
     folder: str                   # the interleaved folder previewed
     y_1: int                      # Bregma row on the FINAL grid (MATLAB 1-based)
     x_2: int                      # Bregma col on the FINAL grid
@@ -913,7 +895,7 @@ def _seed_layout(key: str, args: argparse.Namespace, default_boxes: dict[str, Bo
     if args.start_from:
         candidates.append(Path(args.start_from))
 
-    # getattr: batch_roi_select.py and the tests build `args` without this option.
+    # getattr: older callers and the tests build `args` without this option.
     wanted_sign = -1 if getattr(args, "lambda_above_bregma", False) else 1
 
     def oriented(boxes: dict[str, Box], sign: int, angle: float) -> dict[str, Box]:
@@ -985,9 +967,9 @@ def _safe(name: str) -> str:
 def folder_key(folder: str | Path) -> str:
     """A filename-safe session key from a folder path: its last 3 components.
 
-    ``...\\260611\\R1\\t1`` -> ``260611_R1_t1``. The drive/UNC anchor is dropped and
+    ``...\\200101\\A1\\t1`` -> ``200101_A1_t1``. The drive/UNC anchor is dropped and
     anything outside ``[A-Za-z0-9._-]`` is replaced, because this key is joined to
-    ``roi_set_dir`` to form a path -- an unsanitised ``h:\\letizia\\data`` would make
+    ``roi_set_dir`` to form a path -- an unsanitised absolute drive path would make
     ``Path(dir) / key`` absolute again and write the file somewhere else entirely.
     """
     path = Path(folder)
@@ -1256,7 +1238,7 @@ class ROIEditor:
             # flush: over a network share this is the slow step, and an unflushed
             # line makes the editor look like it is doing nothing.
             print(f"Loading preview: {session.folder}", flush=True)
-            # getattr: roi_editor's own config has neither key; batch_roi_select does.
+            # getattr: roi_editor's own config has neither key; other callers may.
             session.image = preview_image(session.folder, self.args.channel_order,
                                           self.args.preview_frames,
                                           pattern=getattr(self.args, "pattern", "*.tif"),
@@ -2363,7 +2345,7 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
                         "Bypasses interleaved folder decoding; overrides --manifest/--folders.")
     p.add_argument("--image-pattern", default=defaults.get("image_pattern", "*.tif"),
                    metavar="GLOB", help="Only images in --image-dir matching this, "
-                                        "e.g. 261009_PV*.tif.")
+                                        "e.g. 200101_A1*.tif.")
     ns = p.parse_args()
     ns.profile = defaults["profile"]
     ns.channel_order = defaults["channel_order"]

@@ -1,4 +1,4 @@
-"""roi_editor_spec.md 7.2: the per-recording channel rectangle (pure parts, no Qt)."""
+"""The per-recording channel rectangle (pure parts, no Qt)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def make_model(tmp_path, n_pages=2, raw=True):
     rng = np.random.default_rng(1)
     pages = []
     for i in range(n_pages):
-        page = PageModel(key=f"240101_M1_t{i + 1}", folder="(synthetic)", y_1=60, x_2=67,
+        page = PageModel(key=f"210101_M1_t{i + 1}", folder="(synthetic)", y_1=60, x_2=67,
                          boxes=dict(CORTEX_22.boxes), lambda_offset=DEFAULT_LAMBDA_OFFSET,
                          image=rng.random(GRID))
         if raw:
@@ -129,7 +129,7 @@ def test_the_decision_is_channel_rectangle_decide_with_the_page_factors(tmp_path
     expected = cr.decide(*page.odd_even, 2 * bregma_128(page), 2 * lambda_128(page),
                          cr.params_with(model.rectangle_params, page.rectangle))
     assert note == "" and decision == expected
-    # Without raw frames there is no decision (spec 5.3).
+    # Without raw frames there is no decision.
     page.odd_even, page.image_source = None, "cache"
     assert model.decision() == (None, "cached 128 images only (raw frames not found)")
 
@@ -144,7 +144,7 @@ def test_save_round_trip_and_an_unmoved_page_writes_no_key(tmp_path):
     model.move_rectangle(*_corner_and_size(model.page, FACTORS))
     moved = model.page.rectangle
     model.save_all()
-    first, second = (Path(model.args.roi_set_dir) / f"240101_M1_t{i}.yaml" for i in (1, 2))
+    first, second = (Path(model.args.roi_set_dir) / f"210101_M1_t{i}.yaml" for i in (1, 2))
     assert cr.read_roi_set_rectangle(first) == moved
     assert "channel_rectangle" not in yaml.safe_load(second.read_text(encoding="utf-8"))
     # The rest of the file is exactly what save_roi_set alone writes.
@@ -164,7 +164,7 @@ def test_moved_back_onto_params_still_writes_the_key_and_reset_clears_it(tmp_pat
     model = make_model(tmp_path)
     model.move_rectangle(*_corner_and_size(model.page, cr.factors_of(model.rectangle_params)))
     model.save_current()
-    path = Path(model.args.roi_set_dir) / "240101_M1_t1.yaml"
+    path = Path(model.args.roi_set_dir) / "210101_M1_t1.yaml"
     assert cr.read_roi_set_rectangle(path) is not None
     model.reset_rectangle()
     model.save_current()
@@ -198,7 +198,7 @@ def test_the_gcamp_choice_is_saved_resumed_reset_and_never_carried(tmp_path):
     model.choose_gcamp("even")
     assert model.page.dirty and model.commit("choice")
     model.save_current()
-    path = Path(model.args.roi_set_dir) / "240101_M1_t1.yaml"
+    path = Path(model.args.roi_set_dir) / "210101_M1_t1.yaml"
     assert cr.read_roi_set_channel_order(path) == "emo_first"
     assert path.read_bytes().endswith(b"channel_order: emo_first" + (b"\r\n" if b"\r\n" in path.read_bytes() else b"\n"))
     # Copy / apply / navigate do not carry a recording's own channel call.

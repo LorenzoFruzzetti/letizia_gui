@@ -8,16 +8,16 @@ progress dialog for an hour before the first box can be drawn.
 By default it writes what the new ROI editor (``python -m wfci_gui.roi_editor``) reads:
 ``<roi_set_dir>/alignment_images/<key>_odd.tif`` and ``<key>_even.tif`` (float32, 128 grid,
 the mean of the first ``frames_per_parity`` odd / even frames) plus ``<key>_odd_even.json``
-recording the settings, through the editor's own writer (wfci_gui.roi_editor.sources,
-roi_editor_spec.md 5.3), so a baked pair is exactly what the editor caches itself.
+recording the settings, through the editor's own writer (wfci_gui.roi_editor.sources),
+so a baked pair is exactly what the editor caches itself.
 ``--legacy-preview`` writes the old editor's single ``<key>.tif`` instead (same
 ``preview_image`` call as ``ROIEditor.bake_all_images``). Both use write-then-rename
 ``.partial`` files; already-baked images are skipped, so it is resumable and safe to rerun.
 
 Keys are the editor's own: ``folder_key`` takes the LAST THREE path components, so the
-input folders must be laid out ``<...>/<yymmdd>/<animal>/<t#>`` -- for the 2024 cohort
-that means the junction tree, not the raw ``D:\\BOTOX_2024\\<MMDDYYYY_label>`` paths,
-whose session folder would land in the key (CLAUDE.md 9.50).
+input folders must be laid out ``<...>/<yymmdd>/<animal>/<t#>`` -- for raw folders named
+differently that means the cohort's junction tree, not the raw paths, whose session
+folder name would otherwise land in the key.
 
 Run:
     conda run --no-capture-output -n wfci_gui python bake_alignment_images.py
@@ -43,9 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 # Edit this section to run without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
     # Root of the junction tree: <root>/<yymmdd>/<animal>/<t#>. Built so the editor
-    # keys read <yymmdd>_<animal>_t#; see CLAUDE.md 9.50. Current: the July 2023
-    # cohort's tree (scan_botox_2023.py). Previous: ...\WF_2024_links\BOTOX_2024.
-    "root": r"C:\Users\utente\Documents\letizia\WF_2023_links\BOTOX_2023",
+    # keys read <yymmdd>_<animal>_t#. None: pass --root.
+    "root": None,
     # Only these day folders (names under root); None = every day found.
     "days": None,
     # Where the editor looks for previews: <roi_set_dir>/alignment_images. Must match
@@ -63,8 +62,8 @@ RUN_CONFIG: dict[str, Any] = {
     "pattern": "*.tif",
     "rot90_k": 0,
     # How acquisition order is read off the file names (wfci.io.sorted_frame_files).
-    # "number" for the July 2023 cohort (..._1.tif ... ..._6000.tif, not zero-padded);
-    # "name" for every earlier cohort. Must match batch_roi_select.py.
+    # "number" when frame numbers are not zero-padded (..._1.tif ... ..._6000.tif);
+    # "name" when they are. Must match the cohort file's acquisition.frame_order.
     "frame_order": "number",
     # 8 leaves headroom on this 20-core machine; each worker holds one frame plus the
     # two downsamples, so memory is not the limit -- the USB disk is.
@@ -78,8 +77,8 @@ RUN_CONFIG: dict[str, Any] = {
 def find_recordings(root: Path, days: list[str] | None) -> list[Path]:
     """Every ``<root>/<yymmdd>/<animal>/<t#>`` folder, sorted.
 
-    Only ``t``-prefixed leaves are returned: the 2024 cohort has a stray ``z`` folder
-    holding a single ``t1_hemo.tif`` which is not a recording (CLAUDE.md 9.50).
+    Only ``t``-prefixed leaves are returned: an animal folder can hold other folders
+    (for example a single hemodynamics image) that are not recordings.
     """
     folders = []
     for day_dir in sorted(p for p in root.iterdir() if p.is_dir()):
@@ -186,7 +185,7 @@ def main() -> None:
 
     folders = find_recordings(root, args.days)
     # Empty folders are not recordings and would die in the channel split with no
-    # frames to read: 240311/SP20_R00/t1-t5 are empty on this cohort (CLAUDE.md 9.50).
+    # frames to read (a recording folder can exist with nothing in it).
     runnable = [f for f in folders if any(f.glob("*.tif"))]
     empty = [f for f in folders if f not in runnable]
 
@@ -220,7 +219,7 @@ def main() -> None:
     start = time.perf_counter()
     decoded = 0
     # Pool, not ProcessPoolExecutor: its context exit terminates workers, so an
-    # interrupt does not leave the pool running (CLAUDE.md 9.10/9.23). No BLAS here.
+    # interrupt does not leave the pool running. No BLAS here.
     with multiprocessing.Pool(processes=args.workers) as pool:
         for key, seconds, skipped in pool.imap_unordered(worker, todo):
             if skipped:

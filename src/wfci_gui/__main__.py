@@ -1,8 +1,8 @@
 """Entry point: ``python -m wfci_gui [cohorts/<name>.yaml]``.
 
-Run it through conda (CLAUDE.md 9.17), from letizia_refactoring/:
+Run it through conda, from the repository root:
 
-    $env:PYTHONPATH = "$PWD\\src;$PWD"
+    $env:PYTHONPATH = "$PWD\\src;$PWD\\scripts"
     & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -m wfci_gui
 
 Errors are not caught inside the GUI: ``sys.excepthook`` shows the traceback in a dialog
@@ -18,9 +18,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-# Edit this section to run from the editor without CLI arguments (CLAUDE.md 5.2).
+# Edit this section to run from the editor without CLI arguments.
 RUN_CONFIG = {
-    "cohort": None,          # e.g. "cohorts/botox_2023.yaml"; None = start with no cohort open
+    "cohort": None,          # path to a cohort file; None = start with no cohort open
     "config_dir": None,      # None = %APPDATA%\wfci_gui (layout, shortcuts, setup checks, error log)
 }
 

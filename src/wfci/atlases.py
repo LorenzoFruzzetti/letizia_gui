@@ -27,7 +27,7 @@ Two presets ship:
     MATLAB-validated to machine precision -- see ``tests/test_parity.py``.
 
 ``CORTEX_22``
-    The cortical GSR pipeline (``Antea_scripts/``). Transcribed from the MATLAB;
+    The cortical GSR pipeline (the cortical MATLAB scripts). Transcribed from the MATLAB;
     see the provenance note on that constant before trusting the coordinates.
 """
 
@@ -156,18 +156,18 @@ CEREBELLUM_4 = Atlas(
 # Cortex -- 22 ROIs
 # ---------------------------------------------------------------------------
 # PROVENANCE / TRUST (read before relying on these numbers):
-#   Transcribed from the Antea cortical scripts, which define the same 22 boxes
+#   Transcribed from the cortical MATLAB scripts, which define the same 22 boxes
 #   TWICE -- once to draw them, once to average them:
-#     * Antea_scripts/(3)_FOV128-128_ROIposition.txt   (the overlay)
-#     * Antea_scripts/(4)_FOV128x128_corr_SCRIPT.txt   (the ROI means)
+#     * (3)_FOV128-128_ROIposition.txt   (the overlay)
+#     * (4)_FOV128x128_corr_SCRIPT.txt   (the ROI means)
 #   Both copies were cross-checked box-for-box and are IDENTICAL -- unlike the
 #   cerebellar pair above, which HAS drifted. tests/test_atlas_transcription.py
 #   re-checks both facts, against the real .txt files, on every run.
 #   (3) supplies no names, so every label here comes from (4)'s variable names.
 #
 #   Unlike CEREBELLUM_4 there is NO MATLAB reference for this path -- the
-#   coordinates are a careful reading of the scripts, not a proven match. See
-#   MERGING_PLAN.md Phase 8. The `_alta` / `_bassa` suffixes ("upper" / "lower")
+#   coordinates are a careful reading of the scripts, not a proven match.
+#   The `_alta` / `_bassa` suffixes ("upper" / "lower")
 #   are the source scripts' own; two boxes per region, not a naming accident.
 #
 # ORDER: taken from (4)'s
@@ -207,9 +207,8 @@ CORTEX_22 = Atlas(
         "V1R": Box(41, 46, 25, 30),
     },
     grid=_FOV_128,
-    source="Antea_scripts/(3)_FOV128-128_ROIposition.txt + "
-           "(4)_FOV128x128_corr_SCRIPT.txt; NO MATLAB parity reference "
-           "(MERGING_PLAN.md Phase 8)",
+    source="(3)_FOV128-128_ROIposition.txt + "
+           "(4)_FOV128x128_corr_SCRIPT.txt; NO MATLAB parity reference",
 )
 
 ATLASES: dict[str, Atlas] = {
@@ -252,7 +251,7 @@ def load_atlas(path: str | Path) -> Atlas:
 
         name: my_cortex
         grid: [128, 128]          # optional but recommended; see Atlas.grid
-        source: "drawn by AB, 2026-03; 4x objective, 512px sensor"
+        source: "hand-drawn; 4x objective, 512px sensor"
         boxes:                    # ORDER IS PRESERVED -> column order of R
           M2L_alta:  {row_start: -28, row_end: -23, col_start: -15, col_end: -10}
           M2L_bassa: {row_start: -10, row_end:  -5, col_start: -10, col_end:  -5}

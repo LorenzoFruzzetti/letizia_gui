@@ -2,18 +2,18 @@
 
 For the first runnable recording of every session it reports:
   * the per-channel frame rate, from the TIFF header's ``Time_From_Last`` (the time between
-    two interleaved frames: 0.0200 s -> 50 frames/s -> 25 Hz per channel, CLAUDE.md 9.55);
+    two interleaved frames: 0.0200 s -> 50 frames/s -> 25 Hz per channel);
   * whether the frame numbers in the file names are zero-padded (if not, a name sort mixes
-    the channels and ``frame_order`` must be ``number``, 9.64);
+    the channels and ``frame_order`` must be ``number``);
   * the image size, file extension and file count;
   * LED-setting tokens in the file names (``LEDB100_LEDV20``): a change between sessions is
-    an illumination change that creates fake connectivity changes (9.54-9.56).
+    an illumination change that creates fake connectivity changes.
 
 It writes ``<output_root>/acquisition_facts.json`` and prints a table. It does not change the
 cohort file: the user checks the values on the Acquisition page and confirms them there.
 
 Run it:
-    conda run --no-capture-output -n wfci_gui python -u acquisition_facts.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u acquisition_facts.py --cohort <cohort folder>/cohort.yaml
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ import tifffile  # noqa: E402
 from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": r"cohorts\botox_2023.yaml",
+    "cohort": None,  # path to the cohort file (or pass --cohort)
     "headers_per_recording": 3,   # TIFF headers read per recording (Time_From_Last is per frame)
     "prefer_cli_args": True,
 }
@@ -129,7 +129,7 @@ def main() -> None:
         print("WARNING: the frame rate differs between sessions")
     if summary["led_settings_change"]:
         print("WARNING: the LED tokens in the file names change between sessions: an illumination "
-              "change creates fake connectivity changes (CLAUDE.md 9.54-9.56)")
+              "change creates fake connectivity changes")
     print(f"Written: {out}")
 
 

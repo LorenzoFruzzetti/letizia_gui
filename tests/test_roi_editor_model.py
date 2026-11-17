@@ -1,4 +1,4 @@
-"""roi_editor_spec.md 7.1: the new editor's model against the old editor, headless.
+"""The new editor's model against the old editor, headless.
 
 The same edit sequence is applied to ``roi_editor.ROIEditor`` (driven through its key
 handler and its items, ``QT_QPA_PLATFORM=offscreen``) and to ``EditorModel``. After every
@@ -40,11 +40,11 @@ SINGLE = next(label for label in CORTEX_22.boxes if label != LABEL)
 
 # key, y_1, x_2, lambda_offset, lambda_sign, angle
 PAGES = [
-    ("240101_A_t1", 60, 67, DEFAULT_LAMBDA_OFFSET, 1, 0.0),
-    ("240101_A_t2", 61, 66, 33, 1, 0.0),
-    ("240101_A_t3", 70, 64, 30, -1, 0.0),          # Lambda above Bregma (head upside down)
-    ("240104_B_t1", 58, 68, 31, 1, 7.0),           # rotated layout
-    ("240104_B_t2", 59, 67, 30, 1, 0.0),
+    ("210101_A_t1", 60, 67, DEFAULT_LAMBDA_OFFSET, 1, 0.0),
+    ("210101_A_t2", 61, 66, 33, 1, 0.0),
+    ("210101_A_t3", 70, 64, 30, -1, 0.0),          # Lambda above Bregma (head upside down)
+    ("210104_B_t1", 58, 68, 31, 1, 7.0),           # rotated layout
+    ("210104_B_t2", 59, 67, 30, 1, 0.0),
 ]
 
 
@@ -314,7 +314,7 @@ def test_a_box_off_the_frame_refuses_the_save_and_names_it(tmp_path):
         new.save_current()
     new.navigate(1)
     new.move_bregma_by(1, 0)
-    with pytest.raises(OutOfFrameError, match="240101_A_t1"):
+    with pytest.raises(OutOfFrameError, match="210101_A_t1"):
         new.save_modified()
     # The page that fits was still written.
-    assert [p.name for p in new_dir.glob("*.yaml")] == ["240101_A_t2.yaml"]
+    assert [p.name for p in new_dir.glob("*.yaml")] == ["210101_A_t2.yaml"]

@@ -4,10 +4,9 @@ Shared by ``scan_cohort.py`` (which writes it) and the step-1 status check (whic
 compares it with the manifest on disk), so "the manifest matches the tables" means
 exactly "scan_cohort.py would write the same bytes".
 
-Layout: the same columns as every existing manifest (scan_botox_dataset.FIELDS), one
-row per (day, animal) unit, sorted by day then animal, recordings sorted by number,
-CRLF line endings (what pandas and the csv module write on Windows, so the existing
-2023/2024 manifests are reproduced byte for byte).
+Layout: the manifest columns extract_cohort.py reads, one row per (day, animal) unit,
+sorted by day then animal, recordings sorted by number, CRLF line endings (what pandas
+and the csv module write on Windows).
 """
 
 from __future__ import annotations
@@ -26,8 +25,8 @@ MANIFEST_FIELDS = [
     "bregma_row", "bregma_col", "profile", "channel_order", "animal_path",
     "recording_paths",
 ]
-# Pipeline placeholders every existing scanner writes. Bregma is overridden by each
-# recording's own ROI set (extract_cohort: the file's Bregma wins, CLAUDE.md 9.4).
+# Pipeline placeholders written into every manifest row. Bregma is overridden by each
+# recording's own ROI set (extract_cohort: the file's Bregma wins).
 MANIFEST_DEFAULTS = {
     "default_bregma_row": 121,
     "default_bregma_col": 134,

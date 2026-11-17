@@ -1,4 +1,4 @@
-"""One page per workflow step: Settings | Tables | Results (gui_spec.md 5)."""
+"""One page per workflow step: Settings | Tables | Results."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from ..logic.cohort import (
     ACQUISITION_KEYS, BOOL_COLUMNS, CHANNEL_ORDERS, EDITABLE_RECORDING_COLUMNS, FRAME_ORDERS,
     MANIFEST_PATH_STYLES, used_recordings,
 )
-from ..logic import REPO_ROOT
 from ..logic.conda import display_command
 from ..logic.design import check_design
 from ..logic.params import JOBS, build_arguments, form_fields, script_parameters, smoke_unit
@@ -51,13 +50,10 @@ def rectangle_viewer_arguments(cohort, tables, day: str) -> tuple[list[str], str
     units = sorted(have)
     recordings = sorted(shared, key=lambda name: int(name[1:]))
     left_out = sorted(f"{u}/{r}" for u, rs in have.items() for r in rs - shared)
-    # The 2023 / 2024 cohorts have a channel_assignment table; others none.
-    year = "".join(ch for ch in cohort.name if ch.isdigit())[-4:]
-    assignment = Path("manifests") / f"channel_assignment_{year}.csv"
-
+    # A cohort has no channel-assignment table: the viewer's manifest column stays unassigned.
     arguments = ["--day", day, "--units", *units, "--recordings", *recordings,
                  "--pixel-root", str(pixel_root), "--roi-set-dir", str(cohort.path_of("roi_set_dir")),
-                 "--assignment", str(assignment) if (REPO_ROOT / assignment).exists() else "none",
+                 "--assignment", "none",
                  "--params", RECTANGLE_PARAMS]
     note = f"Rectangle viewer: left out (not shared by every unit): {', '.join(left_out)}" if left_out else ""
     return arguments, note
@@ -321,7 +317,7 @@ class ScanPage(StepPage):
                 "Animals: one row per animal folder name", lambda f: self.controller.set_table("animals", f),
                 lambda p: self.controller.import_table("animals", p), bool_columns=BOOL_COLUMNS["animals"],
                 note="raw_name = the folder name exactly; animal = the mouse (two names with the same animal are "
-                     "aliases). Never start an animal with digits only (000 -> PV23_000)."),
+                     "aliases). Never start an animal with digits only (000 -> A1_000)."),
             "recordings": TableEditor(
                 "Recordings: written by the scan", lambda f: self.controller.set_table("recordings", f),
                 lambda p: self.controller.import_table("recordings", p),
@@ -372,7 +368,7 @@ class AcquisitionPage(StepPage):
                 widget = QtWidgets.QLineEdit()
             self.fields[key] = widget
             form.addRow(key.replace("_", " "), widget)
-        self.fields["sampling_rate_hz"].setToolTip("Per channel. 2026 cohort: 10 Hz; 2022-2024: 25 Hz.")
+        self.fields["sampling_rate_hz"].setToolTip("Per channel, in Hz (for example 10 or 25).")
         self.fields["grid"].setToolTip("rows, cols of the final grid, e.g. 128, 128")
         buttons = QtWidgets.QHBoxLayout()
         apply = QtWidgets.QPushButton("Apply values")
@@ -445,7 +441,7 @@ class AcquisitionPage(StepPage):
             warnings = []
             if summary.get("led_settings_change"):
                 warnings.append(colored("⚠ LED settings change between sessions: an illumination change "
-                                        "creates fake connectivity changes (CLAUDE.md 9.54-9.56).", None))
+                                        "creates fake connectivity changes.", None))
             if not summary.get("rate_consistent"):
                 warnings.append(colored("⚠ The frame rate differs between sessions.", False))
             self.facts.setText(
@@ -464,8 +460,8 @@ class RoisPage(StepPage):
         run = self.window.run_job
         return [
             JobSection(self, "bake", [("Bake previews", lambda: run("bake"))]),
-            # The new editor (wfci_gui.roi_editor) is the default since 2026-11-16 (user's
-            # decision). Both write the same files; the old one (batch_roi_select.py, whose
+            # The new editor (wfci_gui.roi_editor) is the default.
+            # Both write the same files; the old one (batch_roi_select.py, whose
             # parameters this section shows) stays available.
             JobSection(self, "roi_select", [("Open ROI editor", self._new_editor),
                                             ("Open old ROI editor", lambda: run("roi_select"))]),
@@ -800,7 +796,7 @@ class AnalysisAPage(StepPage):
         self.focus.addItems(["SSp", "motor"])
         self.focus.textActivated.connect(lambda t: self._set("focus", t))
         self.stats_cohort = QtWidgets.QComboBox()
-        self.stats_cohort.addItems(["", "2026", "2024", "2023", "botox_2022"])
+        self.stats_cohort.addItems(["", "default"])
         self.stats_cohort.setToolTip("The cohort's entry in connectivity_stats.py. A new cohort has none; "
                                      "adding one is an edit of that script and needs approval.")
         self.stats_cohort.textActivated.connect(lambda t: self._set("stats_cohort", t or None))

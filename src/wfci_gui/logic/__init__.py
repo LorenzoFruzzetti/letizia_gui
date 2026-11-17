@@ -6,5 +6,5 @@ allowed: the dependency goes from the scripts to this package, never the other w
 
 from pathlib import Path
 
-# src/wfci_gui/logic/__init__.py -> parents[3] is letizia_refactoring/.
+# src/wfci_gui/logic/__init__.py -> parents[3] is the repository root.
 REPO_ROOT = Path(__file__).resolve().parents[3]

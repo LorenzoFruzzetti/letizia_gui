@@ -1,7 +1,7 @@
 """ROI editor logic with no Qt: undo snapshots, page status, settings, rebuild inputs.
 
 Everything geometric is imported from ``roi_editor.py`` (repo root), which is not modified
-(gui_spec.md section 10, roi_editor_spec.md D23). Pages are built in ``sources.py``; the
+Pages are built in ``sources.py``; the
 edits themselves are in ``model.py``.
 """
 
@@ -102,7 +102,7 @@ def rebuild_sources(keys: list[str], reviewed_dir: Path, rebuilt_dir: Path) -> l
 
     Same rule as wfci_gui.logic.params.rebuild_inputs: a whole session (``<day>_<animal>``,
     the key without its ``_t#``) is rebuilt together, because rebuild_roi_sets.py
-    normalises Bregma/Lambda by the majority within a session (CLAUDE.md 9.20).
+    normalises Bregma/Lambda by the majority within a session.
     """
     sessions: dict[str, list[Path]] = {}
     changed: set[str] = set()
@@ -133,7 +133,7 @@ class EditorSettings:
     roi_seed_dir: str | None = "roi_sets/rebuilt"
     rebuilt_dir: str | None = None
     start_from: str | None = None
-    # One setting for both the two panels and the rectangle decision (roi_editor_spec D4):
+    # One setting for both the two panels and the rectangle decision:
     # the first N odd and the first N even frames are averaged.
     frames_per_parity: int = field(default=10, metadata=dict(
         doc="Frames of each parity (odd / even) averaged into the two images and the "
@@ -168,18 +168,18 @@ def make_settings(values: dict[str, Any], need_folder: bool = True) -> EditorSet
 
 
 def default_values() -> dict[str, Any]:
-    """The EditorSettings defaults as a dict (no hidden script config, roi_editor_spec D7)."""
+    """The EditorSettings defaults as a dict (no hidden script config)."""
     from dataclasses import asdict
     return asdict(EditorSettings())
 
 
-# Geometry defaults every page is seeded with: the values batch_roi_select.py /
-# roi_editor.py ship with, so a page opens exactly as in the old editor.
+# Geometry defaults every page is seeded with: the values roi_editor.py ships with,
+# so a page opens exactly as in the old editor.
 EDITOR_DEFAULTS: dict[str, Any] = {
     "profile": "cortical_gsr",           # atlas = CORTEX_22, downsample 0.5 (128 grid)
     "bregma_row": 121,                   # fallback Bregma (2 x grid units) for a page with no set
     "bregma_col": 134,
-    "lambda_offset": 55,                 # scale reference of the atlas (CLAUDE.md 9.2)
+    "lambda_offset": 55,                 # scale reference of the atlas
     "lambda_above_bregma": False,
     "lambda_scales_box_size": False,
     "mirror_lock": True,

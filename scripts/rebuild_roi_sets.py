@@ -2,24 +2,16 @@
 
 Why
 ---
-The sets in ``roi_sets/`` were drawn page by page in roi_editor.py, and the editor's
-per-box nudge was used on top of the global Lambda rescale.  Auditing them against the
-baseline showed the atlas's structural relations survive everywhere *except* bilateral
-mirror symmetry, which is broken in three regions:
+Sets drawn page by page in the ROI editor can carry per-box nudges on top of the global
+Lambda rescale. The atlas's structural relations survive such editing everywhere
+*except* bilateral mirror symmetry, which two distinct causes break:
 
-    HL       294/356 files, always +1 px
-    V1       289/356 files, -2 .. +6 px, drifting monotonically with acquisition date
-    M2_alta  230/356 files, always +1 px
-
-There are two distinct causes, and they need different fixes.
-
-1. The uniform +1 px in HL and M2_alta is a ROUNDING BUG in ``scale_boxes``.  Its
-   docstring claims round-half-to-even keeps a mirrored pair mirrored because it is
-   symmetric about zero.  Symmetry about zero is not the property the mirror needs --
-   translation invariance is.  A box of span 5 puts its edge at ``centre*f - 2.5``, so
-   mirroring requires ``round(u + 2.5) == round(u - 2.5) + 5``.  Half-to-even fails
-   that whenever ``u = |centre| * f`` lands on an integer: round(5.5) = 6 but
-   round(0.5) = 0, a gap of 6, so the pair comes out 1 px off-centre.
+1. A ROUNDING tie. Round-half-to-even is symmetric about zero, but symmetry about zero
+   is not the property the mirror needs -- translation invariance is.  A box of span 5
+   puts its edge at ``centre*f - 2.5``, so mirroring requires
+   ``round(u + 2.5) == round(u - 2.5) + 5``.  Half-to-even fails that whenever
+   ``u = |centre| * f`` lands on an integer: round(5.5) = 6 but round(0.5) = 0, a gap
+   of 6, so the pair comes out 1 px off-centre.
 
    No rounding rule fixes this.  The mirror needs oddness AND translation invariance,
    and at a tie the two contradict each other (oddness gives f(-0.5) = -f(0.5),
@@ -27,20 +19,13 @@ There are two distinct causes, and they need different fixes.
    merely moves the failure to pairs that straddle zero.  ``roi_editor.scale_boxes``
    therefore REFLECTS: a box left of Bregma is computed as the negated mirror of the
    same box on the right, so the pair is symmetric by construction at every factor.
-   Newly drawn sets no longer acquire this error, and the rebuild only repairs old ones.
 
-2. V1's -2..+6 px error is too large for that and drifts monotonically with acquisition
-   date, so it is a genuine one-hemisphere hand nudge.  Because ``c`` copies the
-   previous page's layout forward, a nudge propagates to every later session and
-   accumulates.  A left-vs-right V1 contrast on the current sets is confounded, and
-   since the drift tracks date it is confounded with group if groups were run in date
-   blocks.  The editor's mirror lock (``roi_editor.ROIEditor._mirror_to_twin``, on by
-   default) is what stops this one recurring: an edit to either box of a pair rewrites
-   the other as its exact mirror.
-
-Bilateral row alignment, box sizes, antero-posterior and medio-lateral ordering,
-co-alignment equalities, disjointness and hemisphere sidedness are clean in all 356
-files, so nothing else needs repairing.
+2. A one-hemisphere hand nudge.  Because ``c`` copies the previous page's layout
+   forward, a nudge propagates to every later session and accumulates, so a
+   left-vs-right contrast becomes confounded with acquisition date (and with group,
+   if groups were recorded in date blocks).  The editor's mirror lock
+   (``roi_editor.ROIEditor._mirror_to_twin``, on by default) stops this one: an edit
+   to either box of a pair rewrites the other as its exact mirror.
 
 This script throws the nudges away and rebuilds each set as the baseline constellation
 scaled by that recording's own Bregma->Lambda distance, which is exactly the geometry
@@ -49,21 +34,18 @@ exact by construction.
 
 The reference Lambda is 55, not the 30 written in cortex22_roi_set.yaml
 --------------------------------------------------------------------
-``_seed_layout`` hands the editor ``args.lambda_offset`` (RUN_CONFIG["lambda_offset"],
-55) when a page is seeded from the profile atlas -- it never reads the atlas file's own
-``lambda_row_offset``.  Every existing set was therefore built treating CORTEX_22 as if
-drawn at 55 rows.  Measured: at reference 55 the pure rescale reproduces the drawn
-boxes to a median 1.5 px and reproduces 2 files exactly; at 30 it is off by 23 px.
-Using 55 keeps the rebuilt ROIs the same size as the ones behind existing results, so
-this is a cleanup and not a change of scale.  The `30` in the baseline file is
-inconsistent with the pipeline and is flagged in CLAUDE.md section 9.
+The editor hands ``args.lambda_offset`` (55) to a page seeded from the profile atlas
+-- it never reads the atlas file's own ``lambda_row_offset``.  ROI sets are therefore
+built treating CORTEX_22 as if drawn at 55 rows, and the rebuild must use the same
+reference or it would change the ROI size.  The `30` in the baseline file is not the
+scale reference; ``wfci.load_atlas`` ignores it.
 
 Header normalisation
 --------------------
 t1..t5 of one <day>_<animal> are one animal in one session, so their geometry must be
-identical.  Four sessions disagreed (260611_PV5 t5 jumped 30 Bregma rows; 260611_T4 t1
-missed a rescale; 260708_PV5 and 260716_PV5 t4/t5 sat 2 Bregma rows off).  Each animal
-is rebuilt from the Bregma and Lambda held by the majority of its own recordings.
+identical.  A slip on one page (a jumped Bregma, a missed rescale) would break that, so
+each animal is rebuilt from the Bregma and Lambda held by the majority of its own
+recordings.
 
 Run it:
     conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py
@@ -110,13 +92,13 @@ RUN_CONFIG: dict[str, Any] = {
     # extract_cohort.py can be pointed here with --roi-set-dir.
     "out_dir": r"roi_sets/rebuilt",
     # Bregma->Lambda distance the BASELINE boxes are treated as being drawn at.
-    # 55 = RUN_CONFIG["lambda_offset"] in batch_roi_select.py, the value the existing
-    # sets were actually built with. See the module docstring before changing this.
+    # 55 = the ROI editor's lambda_offset, the scale reference ROI sets are built with.
+    # See the module docstring before changing this.
     "reference_lambda": 55,
     # True: give every recording of one animal the Bregma/Lambda held by the majority
     # of that animal's own files, so t1..t5 come out identical.
     "normalise_headers": True,
-    # False (matches batch_roi_select.py): rescaling moves box CENTRES but keeps each
+    # False (matches the ROI editor): rescaling moves box CENTRES but keeps each
     # box's pixel area fixed, so ROI noise stays comparable across animals.
     "lambda_scales_box_size": False,
     # True: report what would be written without writing anything.
@@ -125,9 +107,9 @@ RUN_CONFIG: dict[str, Any] = {
 }
 
 # t1..t5 of one <day>_<animal> are the same animal in the same session. The animal is
-# everything between the day and the LAST "_t#": the 2024 names contain underscores
-# (240108_SP20_000_t1) and some have no digits (261012_Nan_t1); the old pattern
-# <letters><digits> left both ungrouped, i.e. without t1..t5 header normalisation.
+# everything between the day and the LAST "_t#": animal names may contain underscores
+# (200101_A1_000_t1) or no digits (200101_Nan_t1); a <letters><digits> pattern would
+# leave both ungrouped, i.e. without t1..t5 header normalisation.
 KEY_RE = re.compile(r"(?P<animal>\d{6}_.+)_t(?P<t>\d+)")
 
 BOX_FIELDS = ("row_start", "row_end", "col_start", "col_end")
@@ -195,7 +177,7 @@ def read_header(path: Path) -> dict[str, Any]:
         # drag). The rebuild is done unrotated and then turned by this, for the same
         # reason as the flip: dropping it would silently un-rotate the layout.
         "lambda_angle_deg": normalise_angle(data.get("lambda_angle_deg", 0.0)),
-        # Per-recording keys the ROI editor appends (roi_editor_spec.md D15/D17): the
+        # Per-recording keys the ROI editor appends: the
         # recording's own channel rectangle and the user's channel_order. Copied to the
         # rebuilt file unchanged -- no majority vote, they belong to this recording.
         "channel_rectangle": read_roi_set_rectangle(path),
@@ -386,8 +368,8 @@ def main() -> None:
             boxes,
             bregma_row,
             bregma_col,
-            # The grid the set was DRAWN on, not the baseline's: the 2022 cohort's
-            # rotated frames are 152x128. Identical for every 128x128 cohort.
+            # The grid the set was DRAWN on, not the baseline's: rotated frames can
+            # be 152x128. Identical for every 128x128 cohort.
             headers[key]["grid"],
             key,
             f"rebuilt by rebuild_roi_sets.py: {baseline_path.name} scaled by "

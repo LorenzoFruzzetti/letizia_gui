@@ -1,4 +1,4 @@
-# Build or repair the `wfci_gui` conda environment (gui_spec.md 9.1).
+# Build or repair the `wfci_gui` conda environment.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_env.ps1 [-SkipTests]
 #
@@ -6,17 +6,17 @@
 # is already importable and installs only what is missing.
 #
 # Why it is built in stages and not with one `conda env create`: one big transaction
-# failed four times on this kind of machine while unpacking mkl / qt6-main
-# (CLAUDE.md 9.19); small transactions do not lose the whole env on a stall.
+# failed repeatedly while unpacking the largest packages (mkl, qt6-main), and
+# small transactions do not lose the whole env on a stall.
 # Version pins are only ever passed from PowerShell, never through Git Bash, where
-# cmd.exe would read `>=` as a redirection (9.18).
+# cmd.exe would read `>=` as a redirection.
 
 param(
     [string]$EnvName = "wfci_gui",
     [switch]$SkipTests
 )
 
-# Native stderr lines (conda warnings) must not become fatal (CLAUDE.md 9.47), so the
+# Native stderr lines (conda warnings) must not become fatal, so the
 # script checks $LASTEXITCODE itself instead of setting $ErrorActionPreference = "Stop".
 $Repo = $PSScriptRoot
 
@@ -42,7 +42,7 @@ function Invoke-Checked([string]$What, [scriptblock]$Block) {
 }
 
 function Test-Import([string]$Module) {
-    # Through conda run: calling the env's python.exe directly breaks numpy's BLAS (9.17).
+    # Through conda run: calling the env's python.exe directly breaks numpy's BLAS.
     & $Conda run -n $EnvName python -c "import $Module" 2>$null | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
@@ -86,7 +86,7 @@ if ($missing.Count) {
     Invoke-Checked "install $($missing -join ' ')" { & $Conda install -n $EnvName -c conda-forge -y @missing }
 } else { Write-Host "stage 3 complete" }
 
-# Stage 4: pip, because the conda solver hangs on statsmodels (CLAUDE.md 9.51).
+# Stage 4: pip, because the conda solver hangs on statsmodels.
 $Stage4 = @{ "statsmodels" = "statsmodels>=0.14"; "psutil" = "psutil>=5.9" }
 $missing = Get-Missing $Stage4
 if ($missing.Count) {
@@ -94,7 +94,7 @@ if ($missing.Count) {
 } else { Write-Host "stage 4 complete" }
 
 # Stage 5: this repository in editable mode, but only if wfci does not already resolve
-# to this checkout (9.13 / 9.26: an editable install may point at another checkout).
+# to this checkout (an editable install may point at another checkout).
 $Expected = (Resolve-Path (Join-Path $Repo "src\wfci")).Path
 $WfciFile = (& $Conda run -n $EnvName python -c "import wfci, os; print(os.path.dirname(wfci.__file__))" 2>$null | Select-Object -Last 1)
 if ($LASTEXITCODE -ne 0 -or $WfciFile -ne $Expected) {
@@ -104,7 +104,7 @@ if ($LASTEXITCODE -ne 0 -or $WfciFile -ne $Expected) {
     $WfciFile = (& $Conda run -n $EnvName python -c "import wfci, os; print(os.path.dirname(wfci.__file__))" | Select-Object -Last 1)
 }
 if ($WfciFile -ne $Expected) {
-    throw "wfci resolves to '$WfciFile', not '$Expected' (CLAUDE.md 9.13/9.26)."
+    throw "wfci resolves to '$WfciFile', not '$Expected'."
 }
 Write-Host "wfci resolves to this checkout: $WfciFile"
 

@@ -1,8 +1,8 @@
 """Browse the pixel dumps side by side as `channel_order: auto` labelled them.
 
 `auto` (wfci.io.interleaved_channel_files) calls the DIMMER of the first two frames
-GCaMP. When the two channels are close in brightness (the 2023 cohort, CLAUDE.md
-9.64) that guess can be wrong, or the "GCaMP" frames may not be fluorescence at all.
+GCaMP. When the two channels are close in brightness that guess can be wrong, or the
+"GCaMP" frames may not be fluorescence at all.
 This viewer shows, for one recording at a time, exactly what the batch saved:
 
     top row     full-field mean image of the auto-GCaMP group (meta `mean_f`),
@@ -27,7 +27,7 @@ Keys:
 
 Run (in the wfci_gui environment):
     python inspect_channel_labels.py
-    python inspect_channel_labels.py --session 230726 --unit PV23_BB0
+    python inspect_channel_labels.py --session 200101 --unit A1
 
 Edit RUN_CONFIG below to run directly from the editor without CLI arguments.
 """
@@ -50,10 +50,10 @@ REPO_ROOT = Path(__file__).resolve().parent
 
 # Edit this section to run without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data_2023",
-    "session": "230714",          # <yymmdd> prefix of the unit folders; None = all
-    "unit": None,                 # e.g. "PV23_B00" to start on one animal; None = first
-    "sampling_rate_hz": 25.0,     # per channel; 2023/2024 = 25, 2026 = 10 (CLAUDE.md 9.55)
+    "pixel_root": REPO_ROOT / "pixel_data",
+    "session": None,              # <yymmdd> prefix of the unit folders; None = all
+    "unit": None,                 # e.g. "A1" to start on one animal; None = first
+    "sampling_rate_hz": 25.0,     # per channel frame rate of the dumps
     "color_percentiles": (1.0, 99.0),
     "prefer_cli_args": True,
 }
@@ -96,7 +96,7 @@ def find_recordings(pixel_root: Path, session: str | None) -> list[Path]:
 
 
 def bandpass(image: np.ndarray) -> np.ndarray:
-    """Vessel-scale structure: Gaussian sigma 1 minus sigma 8 (CLAUDE.md 9.34's filter)."""
+    """Vessel-scale structure: Gaussian sigma 1 minus sigma 8 (it isolates vessel-sized structure)."""
     image = np.asarray(image, dtype=np.float64)
     return gaussian_filter(image, 1) - gaussian_filter(image, 8)
 

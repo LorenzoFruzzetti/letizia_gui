@@ -1,7 +1,7 @@
 """Midline-rectangle channel rule: which interleaved group (odd / even) is GCaMP?
 
-Pure numpy, no Qt. Shared by scripts/channel_rectangle_viewer.py (where the rule was
-tuned, channel_rectangle_viewer_spec.md) and roi_editor.py (which draws the rectangle on
+Pure numpy, no Qt. Shared by scripts/channel_rectangle_viewer.py (where its parameters
+are tuned) and roi_editor.py (which draws the rectangle on
 every page and states the decision while the ROIs are placed).
 
 Hypothesis: along the Bregma-Lambda axis (superior sagittal sinus) the reflectance image
@@ -14,10 +14,10 @@ centred on the axis, starts at L + start_offset_factor * d * u, is length_factor
 and width_factor * d wide. Every parameter is a factor of d, so one parameter set applies
 at every scale and on any grid: the 128-grid editor uses the same corners divided by 2.
 
-Defaults are the parameters saved from the viewer in
-outputs/channel_rectangle/params.json (2026-11-12); that file, when present, wins.
+Defaults: the constants in `RectangleParams` below, the default midline-rectangle
+parameters. A params.json saved from the viewer, when present, wins.
 
-Per recording (roi_editor_spec.md D14/D15): a ROI set may carry its own
+Per recording: a ROI set may carry its own
 ``channel_rectangle: {length_factor, width_factor, start_offset_factor}``, written by the
 ROI editor (wfci_gui.roi_editor) for a page whose rectangle was moved. The statistic stays
 global. ``rectangle_params_for`` gives the parameters a recording is decided with.
@@ -44,7 +44,7 @@ UNASSIGNED = "unassigned"
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class RectangleParams:
-    # Defaults = outputs/channel_rectangle/params.json as saved from the viewer.
+    # Default midline-rectangle parameters; check them for each cohort in the viewer.
     length_factor: float = field(default=0.7444891064863796, metadata=dict(
         doc="Rectangle length along the axis, as a multiple of the Bregma-Lambda distance d",
         unit="d", minimum=0.05, maximum=5.0))
@@ -101,7 +101,7 @@ def params_or_default(path: str | Path | None = DEFAULT_PARAMS_PATH) -> Rectangl
 
 
 # ---------------------------------------------------------------------------
-# Per-recording rectangle (roi_editor_spec.md D14/D15): the three factors only; the
+# Per-recording rectangle: the three factors only; the
 # statistic stays global in params.json. Stored in the recording's ROI set as one line,
 #     channel_rectangle: {length_factor: ..., width_factor: ..., start_offset_factor: ...}
 # written only for a page whose rectangle was moved in the ROI editor.
@@ -156,7 +156,7 @@ def clip_factor(name: str, value: float) -> float:
 
 
 def factors_from_roi(bregma, lambda_, corner, length: float, width: float) -> RectangleFactors:
-    """A dragged rectangle read back as factors (the viewer's rule, D16).
+    """A dragged rectangle read back as factors (the viewer's rule).
 
     ``corner`` is the ROI's local origin (row, col) and ``length`` / ``width`` its size,
     all in the same grid as ``bregma`` / ``lambda_``. Only the component along the axis is
@@ -211,7 +211,7 @@ def append_roi_set_rectangle(path: str | Path, factors: RectangleFactors) -> Non
     """Append the block to a ROI set ``roi_editor.save_roi_set`` has just written.
 
     Written as bytes with the file's own line ending (save_roi_set writes in text mode, so
-    CRLF on Windows; CLAUDE.md 9.28), so the rest of the file is byte-identical to what
+    CRLF on Windows), so the rest of the file is byte-identical to what
     save_roi_set wrote. A file that already carries the key is refused.
     """
     path = Path(path)
@@ -264,7 +264,7 @@ def parity_of_order(channel_order: str) -> str:
 
 def rectangle_params_for(roi_set_path: str | Path, global_params: RectangleParams
                          ) -> tuple[RectangleParams, str]:
-    """The rectangle a recording is decided with, and where it came from (D18).
+    """The rectangle a recording is decided with, and where it came from.
 
     ``("roi_set", ...)``: the ROI set's own factors with the global statistic;
     ``("params", ...)``: the set has no ``channel_rectangle``, so params.json's rectangle.
@@ -276,14 +276,14 @@ def rectangle_params_for(roi_set_path: str | Path, global_params: RectangleParam
 
 
 # ---------------------------------------------------------------------------
-# Agreement between systems (moved here from scripts/channel_rectangle_viewer.py so
-# the ROI editor's verdict bar uses the same marks).
+# Agreement between systems (shared by scripts/channel_rectangle_viewer.py and
+# the ROI editor's verdict bar, so both use the same marks).
 # ---------------------------------------------------------------------------
 def gcamp_parity_from_order(channel_order: str) -> str:
     """`gcamp_first` -> the odd frames are GCaMP; `emo_first` -> the even ones.
 
-    `odd_even_unassigned` is the cache of a recording the pipeline judged not interleaved
-    (CLAUDE.md 9.72): the library gives no parity for it. The manifest leaves the column
+    `odd_even_unassigned` is the cache of a recording the pipeline judged not interleaved:
+    the library gives no parity for it. The manifest leaves the column
     empty for its `uncertain` / `not_interleaved` verdicts, and `auto` names no parity
     either (the brightness heuristic decides at run time): no parity.
     """

@@ -1,9 +1,9 @@
 """The pipeline is sized by the atlas, not by the number 4.
 
-MERGING_PLAN.md §2.1 claims `wfci` is already anatomy-agnostic -- that "generalise
+`wfci` is meant to be anatomy-agnostic -- that "generalise
 to 22 ROIs" is a config task, not a refactor, because every output is sized from
 ``len(cfg.boxes)`` and every ``4`` in the code is in a comment. That claim is load
-bearing for the whole merge, so it gets a test rather than a paragraph.
+bearing, so it gets a test rather than a paragraph.
 
 Both the in-memory and the streaming path are exercised: they compute ROI means
 in different places (whole-stack ``nanmean`` vs per-frame reduction), so each
@@ -136,8 +136,8 @@ def test_column_order_follows_the_atlas_dict_order(trials):
 def test_a_study_can_bring_its_own_atlas(trials):
     """No preset required: an arbitrary dict of boxes is a first-class atlas.
 
-    The library provides mechanism; which regions exist is the study's business
-    (MERGING_PLAN.md P2). If this ever needed a library change, the boundary has
+    The library provides mechanism; which regions exist is the study's business.
+    If this ever needed a library change, the boundary has
     leaked.
     """
     custom = {

@@ -1,4 +1,4 @@
-"""Job queue model and job history (gui_spec.md section 7). No Qt: the controller runs them.
+"""Job queue model and job history. No Qt: the controller runs them.
 
 One job runs at a time; the rest wait in order. Every finished job appends one JSON line
 to ``<output_root>/gui_jobs.jsonl``: step, command, overrides, start, end, exit code, log.
@@ -81,7 +81,7 @@ def timestamp() -> str:
 
 
 def log_file_name(step: str, when: datetime | None = None) -> str:
-    """``<step>_<timestamp>.log`` (spec 7)."""
+    """``<step>_<timestamp>.log``."""
     when = when or datetime.now()
     return f"{step}_{when.strftime('%Y%m%d_%H%M%S')}.log"
 

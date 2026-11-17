@@ -1,7 +1,5 @@
 """Where the ROI editor's pages come from, and their odd / even images. No Qt.
 
-roi_editor_spec.md 6.1 and 5.3.
-
 Pages
 -----
 * a cohort file: its manifest (``manifest:``) when that file exists, else the folder scan
@@ -27,9 +25,8 @@ as ``<name>.partial`` and renamed. The old single ``<key>.tif`` preview is only 
 (the odd panel shows it, there is no even image and no decision), never written.
 
 The rectangle decision needs the 256-grid means, read from the raw frames. A decision
-from the cached 128 images (upsampled 2x) disagreed with the raw one on 27 of 496
-recordings of the 2023/2024 dumps (spec 5.3 open point, 2026-11-16), so when only the
-cache is available the page has no decision.
+from the cached 128 images (upsampled 2x) disagrees with the raw one too often to be
+trusted, so when only the cache is available the page has no decision.
 """
 
 from __future__ import annotations
@@ -135,7 +132,7 @@ def make_page(key: str, folder: str, args, default_boxes, bregma_row: int, bregm
 
 
 def page_order(page: PageModel) -> tuple[str, str, str]:
-    """animal -> day -> t# (D24): 'c' then copies between sessions of one animal."""
+    """animal -> day -> t#: 'c' then copies between sessions of one animal."""
     return page.animal, page.day, page.recording
 
 
@@ -270,7 +267,7 @@ def load_cohort(cohort: str | Path, flags: dict[str, Any] | None = None) -> Load
 def manifest_settings(manifest: str | Path, flags: dict[str, Any] | None = None
                       ) -> tuple[EditorSettings | None, str | None]:
     """The settings of a manifest from the cohort that names it: ``(settings, cohort)``.
-    ``(None, None)`` when no cohort names it: the caller asks for them (D10)."""
+    ``(None, None)`` when no cohort names it: the caller asks for them."""
     cohort = cohort_for_manifest(manifest)
     if cohort is None:
         return None, None

@@ -1,4 +1,4 @@
-"""A small fake cohort on disk for the wfci_gui tests (gui_spec.md 12).
+"""A small fake cohort on disk for the wfci_gui tests.
 
 raw/SESSION_A/{m1_a,m2_a}/{t1,t2}  and  raw/SESSION_B/{m1_b,m2_b}/{t1,t2}: 6 tiny TIFFs
 each, numbered 1..6, the bright (reflectance) image second in every pair. ``m1_a`` and
@@ -17,7 +17,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_ROI_SET = REPO_ROOT / "atlas" / "cortex22_roi_set.yaml"
-SESSIONS = {"SESSION_A": ("230101", "BL"), "SESSION_B": ("230104", "3D")}
+SESSIONS = {"SESSION_A": ("200101", "BL"), "SESSION_B": ("200104", "3D")}
 ANIMAL_FOLDERS = {"m1_a": "M1", "m2_a": "M2", "m1_b": "M1", "m2_b": "M2"}
 
 
@@ -62,7 +62,7 @@ def make_cohort(tmp_path: Path, link_root: bool = False) -> Path:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     pd.DataFrame([dict(session_folder=s, day=d, timepoint=t, day_zero="false", include="true")
                   for s, (d, t) in SESSIONS.items()]).to_csv(cohorts / "fake" / "sessions.csv", index=False)
-    pd.DataFrame([dict(raw_name=f, animal=a, group="P", mouse_line="PV-CRE", include="true")
+    pd.DataFrame([dict(raw_name=f, animal=a, group="P", mouse_line="line_a", include="true")
                   for f, a in ANIMAL_FOLDERS.items()]).to_csv(cohorts / "fake" / "animals.csv", index=False)
     (cohorts / "fake" / "recordings.csv").write_text(
         "day,animal,recording,path,n_files,status,use,channel_order\n", encoding="utf-8")

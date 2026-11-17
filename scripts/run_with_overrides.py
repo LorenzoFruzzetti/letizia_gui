@@ -1,4 +1,4 @@
-"""Run a flat script with some of its module-level assignments replaced (gui_spec.md 6).
+"""Run a flat script with some of its module-level assignments replaced.
 
     python run_with_overrides.py <script.py> --set name=value [--set name=value ...] [-- args]
 
@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from wfci_gui.logic.defaults import apply_assignment_overrides, literal_value  # noqa: E402
 
-# Edit this section to run without CLI flags (CLAUDE.md 5.2): a script and its overrides.
+# Edit this section to run without CLI flags: a script and its overrides.
 RUN_CONFIG = {
     "script": None,          # e.g. "connectivity_stats.py"
     "overrides": {},         # e.g. {"fdr_alpha": 0.1}

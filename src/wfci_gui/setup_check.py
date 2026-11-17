@@ -1,4 +1,4 @@
-"""Environment checks for the Setup page (gui_spec.md 9.2), run INSIDE the wfci_gui env.
+"""Environment checks for the Setup page, run INSIDE the wfci_gui env.
 
     conda run --no-capture-output -n wfci_gui python -u -m wfci_gui.setup_check --out <json> [--tests]
 
@@ -6,7 +6,7 @@ Writes one JSON file the GUI reads for the step-0 status:
     {"checked": "...", "checks": [{"name": ..., "ok": ..., "detail": ...}, ...]}
 
 Each package is imported in a child process, so one broken package (a DLL that fails
-to load, CLAUDE.md 9.17) is reported as a failed check instead of stopping the rest.
+to load) is reported as a failed check instead of stopping the rest.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Import name -> what it is for. statsmodels and psutil are pip-installed (9.51).
+# Import name -> what it is for. statsmodels and psutil are pip-installed.
 PACKAGES = {
     "numpy": "arrays", "scipy": "statistics", "pandas": "tables", "tifffile": "raw TIFFs",
     "matplotlib": "figures", "yaml": "cohort and ROI files", "pytest": "tests",
     "pyqtgraph": "GUI plots", "PySide6": "GUI", "pytestqt": "GUI tests",
     "statsmodels": "mixed models", "psutil": "memory checks",
 }
-# A BLAS call: an env whose MKL DLLs are not on PATH dies here (9.17), not at import.
+# A BLAS call: an env whose MKL DLLs are not on PATH dies here, not at import.
 BLAS_PROBE = "import numpy as np; a = np.random.rand(22, 300); a @ a.T; np.corrcoef(a)"
 
 
@@ -45,7 +45,7 @@ def check_packages() -> list[dict]:
     blas = run_python(BLAS_PROBE)
     checks.append(dict(name="numpy BLAS works", ok=blas.returncode == 0,
                        detail="ok" if blas.returncode == 0 else
-                       f"exit code {blas.returncode:#x}: run through conda run (CLAUDE.md 9.17)"))
+                       f"exit code {blas.returncode:#x}: run through conda run"))
     return checks
 
 
@@ -56,7 +56,7 @@ def check_wfci_checkout() -> dict:
     ok = result.returncode == 0 and Path(location).resolve().parent == expected.resolve()
     detail = location if ok else (
         f"wfci is loaded from {location or '(import failed)'}, not {expected} "
-        "(CLAUDE.md 9.13/9.26): run setup_env.ps1 or set PYTHONPATH")
+        "(an editable install may point at another checkout): run setup_env.ps1 or set PYTHONPATH")
     return dict(name="wfci from this checkout", ok=ok, detail=detail)
 
 

@@ -1,8 +1,7 @@
 """Scan a cohort's raw folders from its cohort file: inventory, manifest, junction view.
 
-Generic replacement for the per-cohort scanners (scan_botox_2022/2023/2024.py,
-scan_botox_dataset.py). Everything those scripts had hard-coded is in the cohort file
-and its tables (gui_spec.md 4):
+Generic: everything about the cohort's folder layout is in the cohort file
+and its tables:
 
   * ``sessions.csv``  session folder -> day (yymmdd) and timepoint; ``include`` false skips it;
   * ``animals.csv``   animal folder name -> animal (aliases are rows with the same animal);
@@ -15,10 +14,10 @@ Writes:
   * the manifest (extract_cohort layout; logic/manifest.py), paths through the junction
     view when ``manifest_paths: link``;
   * the junction view ``<link_root>\\<yymmdd>\\<animal>\\<t#>`` -> raw folder (Windows only):
-    the ROI editor keys a page by the last three path parts (CLAUDE.md 9.51).
+    the ROI editor keys a page by the last three path parts.
 
 Run it:
-    conda run --no-capture-output -n wfci_gui python -u scan_cohort.py --cohort cohorts\\botox_2023.yaml
+    conda run --no-capture-output -n wfci_gui python -u scan_cohort.py --cohort <cohort folder>/cohort.yaml
     ... --no-walk     rebuild manifest + junctions from recordings.csv only (no raw disk read)
 
 Errors surface (no try/except): an unplugged disk or an unknown folder name stops the scan.
@@ -43,16 +42,16 @@ from wfci_gui.logic.manifest import (  # noqa: E402
     MANIFEST_DEFAULTS, link_path, manifest_rows, manifest_text,
 )
 
-# Edit this section to run without CLI flags (CLAUDE.md 5.2).
+# Edit this section to run without CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": r"cohorts\botox_2023.yaml",
+    "cohort": None,  # path to the cohort file (or pass --cohort)
     "walk": True,               # False: no raw-disk read; manifest + junctions from recordings.csv
     "make_links": True,         # False: create no junctions
     # Read the first and last image pair of each recording to check that the bright
     # (reflectance) image keeps its parity: a dropped frame mid-recording swaps the channels.
     "check_parity": True,
     "center_fraction": 0.5,     # central part of each image compared for the parity check
-    # Recording folder name -> recording: "t3" and "t3_LEDv40_..." (2022) both give t3.
+    # Recording folder name -> recording: "t3" and "t3_LEDv40_..." both give t3.
     "recording_pattern": r"^(t\d+)(?:_.*)?$",
     "default_bregma_row": MANIFEST_DEFAULTS["default_bregma_row"],
     "default_bregma_col": MANIFEST_DEFAULTS["default_bregma_col"],
@@ -211,7 +210,7 @@ def merge_user_columns(rows: list[dict[str, Any]], previous) -> list[dict[str, A
 def make_links(cohort: Cohort, recordings) -> int:
     """Create missing junctions; refuse one that points somewhere else."""
     if os.name != "nt":
-        raise NotImplementedError("junction creation is Windows-only (gui_spec.md D6)")
+        raise NotImplementedError("junction creation is Windows-only")
     import _winapi
     made = 0
     for row in recordings.itertuples():
@@ -219,7 +218,7 @@ def make_links(cohort: Cohort, recordings) -> int:
             continue
         link, target = link_path(cohort, row.day, row.animal, row.recording), Path(row.path)
         # lexists: true for a junction even when its target disk is unplugged. A junction
-        # one level up (an animal-folder view, CLAUDE.md 9.51) is fine when it resolves to
+        # one level up (an animal-folder view) is fine when it resolves to
         # the same folder.
         if os.path.lexists(link):
             if os.path.normcase(os.path.realpath(link)) != os.path.normcase(os.path.realpath(target)):

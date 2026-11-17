@@ -13,14 +13,14 @@ only be answered by re-reading the raw TIFFs and re-running the pipeline.
 stream*, so the pass count and the resident-memory profile are unchanged:
 
   * files are preallocated with ``np.lib.format.open_memmap`` and each frame is
-    assigned into its own row, so nothing accumulates in RAM (invariant I2) and
-    the write happens inside the existing pass 2 (invariant I10);
+    assigned into its own row, so nothing accumulates in RAM (one frame in memory) and
+    the write happens inside the existing pass 2 (two passes per trial);
   * the result is a plain ``.npy`` that reads back with
     ``np.load(path, mmap_mode="r")``, so one frame or one pixel's time-course can
     be sliced without loading the whole volume.
 
 **Axis order.** The dumps are ``[time, y, x]``, NOT the library's ``[y, x, time]``
-(see LIBRARY.md section 3). This is a deliberate exception for *output files
+(the library's array-shape convention). This is a deliberate exception for *output files
 only*, and the numeric path is untouched. Frame-major rows are contiguous, so
 each frame is one sequential write; ``[y, x, time]`` would stride every frame
 across the whole file, which for a 79 MB volume is the difference between a
@@ -209,7 +209,7 @@ class PixelDump:
         ``dff_q`` the twice-downsampled corrected frame. The second downsample of
         the raw channels happens here rather than in the caller, so the streaming
         loop hands over its own locals and nothing about it changes. Per-frame
-        resize equals whole-stack resize (invariant I11), so these are the same
+        resize equals whole-stack resize, so these are the same
         numbers a whole-stack downsample would give.
         """
         if self._closed:

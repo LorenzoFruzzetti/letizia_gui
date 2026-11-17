@@ -1,4 +1,4 @@
-"""The ROI editor window (roi_editor_spec.md 6.2): verdict bar + odd | even panels + docks.
+"""The ROI editor window: verdict bar + odd | even panels + docks.
 
 Layout, after scripts/channel_rectangle_viewer.py:
 
@@ -71,7 +71,7 @@ RECENT_LIMIT = 10
 
 
 def drop_conflicting_overrides(config_dir: Path) -> list[str]:
-    """User shortcut overrides that take a key the new commands use are dropped (spec 6.3).
+    """User shortcut overrides that take a key the new commands use are dropped.
 
     Returns one line per dropped binding, for the changelog shown in the Activity panel.
     """
@@ -380,7 +380,7 @@ class EditorWindow(ShellWindow):
 
     # ----- questions (one method each, so tests can answer them) -------------------------
     def ask_unsaved(self, count: int) -> str:
-        """'save' | 'discard' | 'cancel' for pages with unsaved edits (D11)."""
+        """'save' | 'discard' | 'cancel' for pages with unsaved edits."""
         box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, "Unsaved pages",
                                     f"{count} page(s) have unsaved changes.", parent=self)
         save = box.addButton("Save all", QtWidgets.QMessageBox.AcceptRole)
@@ -479,7 +479,7 @@ class EditorWindow(ShellWindow):
         finally:
             self.controller.syncing = False
         for parity, panel in self.panels.items():
-            # No channel label until the user has made the call (D2: avoid bias).
+            # No channel label until the user has made the call (avoids bias).
             role = "" if page.gcamp_choice is None else (" — GCaMP" if parity == page.gcamp_choice
                                                           else " — reflectance")
             panel.setTitle(parity + role)
@@ -685,7 +685,7 @@ class EditorWindow(ShellWindow):
         if not sources_:
             self.notify("No new or changed saved sets: nothing to rebuild.")
             return
-        # Only these files are rebuilt, never the whole folder (CLAUDE.md 9.47).
+        # Only these files are rebuilt, never the whole folder.
         self.copy_dir = Path(tempfile.mkdtemp(prefix="roi_rebuild_"))
         for source in sources_:
             shutil.copy2(source, self.copy_dir / source.name)

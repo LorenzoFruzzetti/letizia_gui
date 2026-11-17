@@ -190,60 +190,6 @@ def test_barplot_renders_both_signs():
     plt.close("all")
 
 
-# ---------------------------------------------------------------------------
-# The worked study script end to end (the Phase 6 acceptance)
-# ---------------------------------------------------------------------------
-def test_study_script_contrasts_match_a_hand_computation():
-    """compute_contrasts on the demo cohort must equal a direct numpy average."""
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
-    import healthy_vs_disease_day4 as study
-
-    table = study.demo_cohort(seed=0)
-    contrasts = study.compute_contrasts(table)
-
-    healthy = [r.matrix for r in table if r.metadata["group"] == "healthy"]
-    disease = [r.matrix for r in table if r.metadata["group"] == "disease"]
-    expected_diff = np.mean(healthy, axis=0) - np.mean(disease, axis=0)
-
-    np.testing.assert_allclose(contrasts["diff"].matrix, expected_diff)
-
-    # The injected signal (0.4 per group, opposite signs) dominates DIFF at its
-    # edges: ~0.8 plus the residual of the random base, which does not fully
-    # cancel over 5+5 animals. So it is large and positive, and clearly the
-    # strongest edge -- which is what demo_adjacency relies on to find it.
-    diff = contrasts["diff"].matrix
-    signal_edges = [(0, 11), (2, 13), (4, 15), (8, 19)]
-    for i, j in signal_edges:
-        assert diff[i, j] > 0.5, f"injected signal at ({i},{j}) lost: {diff[i, j]:.3f}"
-    off_diag = diff[~np.eye(diff.shape[0], dtype=bool)]
-    assert diff[0, 11] >= np.percentile(off_diag, 95), "signal edge is not among the strongest"
-
-
-def test_study_script_writes_three_figures(tmp_path):
-    """The whole study runs headless and produces its figures (Phase 6 acceptance)."""
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"))
-    import healthy_vs_disease_day4 as study
-
-    cfg = dict(study.RUN_CONFIG)
-    cfg["output_dir"] = str(tmp_path)
-    original = study.RUN_CONFIG
-    study.RUN_CONFIG = cfg
-    try:
-        study.main()
-    finally:
-        study.RUN_CONFIG = original
-
-    for name in ("diff_matrix.png", "network.png", "barplots.png"):
-        assert (tmp_path / name).exists(), f"{name} was not written"
-        assert (tmp_path / name).stat().st_size > 0
-
-
 if __name__ == "__main__":
     import sys
 

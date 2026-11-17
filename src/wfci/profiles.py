@@ -15,8 +15,7 @@ same chain; the cerebellar one simply leaves the brackets empty.
 **Presets, not a closed set.** The three below are conveniences. A study builds
 its own -- from scratch or with ``dataclasses.replace(CORTICAL_GSR, trim=5)`` --
 and never edits this file. Profiles carry *pipeline* differences only; anything
-about a cohort, a group or an animal belongs in a study script, not here
-(MERGING_PLAN.md P2).
+about a cohort, a group or an animal belongs in a study script, not here.
 """
 
 from __future__ import annotations
@@ -139,11 +138,11 @@ CEREBELLAR_STIM = Profile(
     overlay_frame=302,
 )
 
-# Cortical with GSR (the Antea scripts). No trim -- script (1) keeps every frame;
+# Cortical with GSR (the cortical MATLAB scripts). No trim -- script (1) keeps every frame;
 # full-recording baseline; brain mask + global signal regression before the ROI
 # means. overlay_frame=10 mirrors script (3)'s t_TEMP_regressed(:,:,11,2).
 #
-# NOTE (MERGING_PLAN.md P4): unlike the cerebellar presets, these settings have no
+# NOTE: unlike the cerebellar presets, these settings have no
 # MATLAB reference behind them -- they are a careful reading of the scripts, not a
 # proven match.
 CORTICAL_GSR = Profile(

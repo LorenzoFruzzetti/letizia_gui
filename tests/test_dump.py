@@ -337,8 +337,8 @@ def test_region_outside_the_grid_raises(trial, tmp_path):
 def test_overflowing_dtype_raises_instead_of_writing_inf(tmp_path):
     """The float16 ceiling must be a loud failure, not an inf in the file.
 
-    This is the guard that makes the measured 3.6% headroom on raw F safe to rely
-    on: if a brighter recording ever exceeded it, the run stops.
+    This is the guard that makes the small headroom of raw F below the float16
+    ceiling safe to rely on: if a brighter recording ever exceeded it, the run stops.
     """
     dump = PixelDump(tmp_path, "test", n_time=1, downsample=DS, f_dtype=np.float16)
     big = np.full((4, 4), 1e6)

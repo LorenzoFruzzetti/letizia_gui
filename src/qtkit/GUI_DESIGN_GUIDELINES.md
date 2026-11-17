@@ -1,7 +1,5 @@
 # Desktop GUI Design Guidelines (Python, Qt + pyqtgraph)
 
-Last updated: 2026-10-08
-
 ## Summary
 
 Build the shell once with Qt, treat every command as data, and plug in whatever views the project needs: tables, forms, text, trees, plots or images.
@@ -262,7 +260,7 @@ conda run -n <env_name> python -m <package>
 
 ## 8. Decisions and open questions
 
-Decided (2026-10-07):
+Decided:
 
 | Question | Decision | Applied in |
 | --- | --- | --- |
@@ -277,7 +275,7 @@ Decided (2026-10-07):
 | Minimum versions | Python 3.10, PySide6 6.5, pyqtgraph 0.13; conda `environment.yml` + install README | 1.7, 7.7 |
 | Default file types | Core and optional loader tiers, as in the table below | 4.1, 8 |
 | pandas | Core dependency: CSV/TSV loading and DataFrame-backed tables | 1.7, 5.8 |
-| Reuse across projects | Copy the self-contained `src/qtkit/` folder; generic fixes go back into it with a test (decided 2026-10-08) | 9 |
+| Reuse across projects | Copy the self-contained `src/qtkit/` folder; generic fixes go back into it with a test | 9 |
 | Pipeline guide | Every multi-step tool shows its workflow as a guide dock with live status and per-step help | 9.2 |
 
 **Loader tiers.** Every format the core can open adds a dependency to every project that uses it, so loaders come in two tiers:

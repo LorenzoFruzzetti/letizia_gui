@@ -1,6 +1,6 @@
 """Per-animal stack of the ROI-union raw-F traces, one row per timepoint, shared y-scale.
 
-For every animal in ``experimental_design_2024.csv`` (BL2 excluded) draw one figure with
+For every animal in the design CSV (excluded timepoints left out) draw one figure with
 one row per timepoint, sorted by ``days_since_day1``. Each row is the raw-F panel of that
 day's ``<day>_<animal>\\plots_roi_union\\channel_traces.png``: t1..t5 joined end to end,
 per-frame ROI-union mean of each channel, faint full rate + bold 1 s moving mean.
@@ -22,12 +22,12 @@ recordings. With --select, only the selected animals' rows are replaced in the C
     python plot_channel_traces_by_animal.py
     python plot_channel_traces_by_animal.py --no-plots   # CSV only
 
-2023 cohort (t0-based, some days lack a recording): ``--recordings-from-design`` takes each
+Cohorts whose days do not all have t1..t5: ``--recordings-from-design`` takes each
 day's recordings from the design CSV instead of a fixed t1..t5; every listed recording must
 still have its cache, and a day missing one the animal has on other days says so in its label.
 
-    python plot_channel_traces_by_animal.py --pixel-root pixel_data_2023 ^
-        --design-csv pixel_data_2023\\experimental_design.csv --recordings-from-design
+    python plot_channel_traces_by_animal.py --pixel-root pixel_data ^
+        --design-csv pixel_data\\experimental_design.csv --recordings-from-design
 """
 from __future__ import annotations
 
@@ -48,13 +48,13 @@ from plot_channel_traces import (CHANNELS, COLORS, INK, META_NAME, MUTED, NAMES,
 
 REPO_ROOT = Path(__file__).resolve().parent
 RUN_CONFIG = {
-    "pixel_root": REPO_ROOT / "pixel_data_2024",
-    "design_csv": REPO_ROOT / "pixel_data_2024" / "experimental_design_2024.csv",
+    "pixel_root": REPO_ROOT / "pixel_data",
+    "design_csv": REPO_ROOT / "pixel_data" / "experimental_design.csv",
     "out_dir": "plots_roi_union_by_animal",
     "stats_csv": "p99_minus_p1_by_recording.csv",
     "exclude_timepoints": ("BL2",),
     "recordings": ("t1", "t2", "t3", "t4", "t5"),
-    # Same as the 2024 union plots (plot_channel_traces.py defaults).
+    # Per-channel frame rate of the dumps, and the moving-mean window.
     "sampling_rate_hz": 25.0,
     "smooth_s": 1.0,
 }
@@ -279,7 +279,7 @@ def parse_args() -> argparse.Namespace:
                    help="Draw each day's recordings as listed in the design CSV (ignores --recordings).")
     p.add_argument("--sampling-rate-hz", type=float, default=RUN_CONFIG["sampling_rate_hz"])
     p.add_argument("--smooth-s", type=float, default=RUN_CONFIG["smooth_s"])
-    p.add_argument("--select", nargs="*", default=None, help="Animals, e.g. SP20_RR0.")
+    p.add_argument("--select", nargs="*", default=None, help="Animals, e.g. A1.")
     args = p.parse_args()
     args.recordings = tuple(args.recordings)
     return args
