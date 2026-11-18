@@ -179,3 +179,13 @@ def test_a_cohort_saved_by_a_newer_version_is_refused(window, tmp_path):
     with pytest.raises(ValueError, match="newer"):
         window.controller.open_cohort(path)
     assert window.controller.state.cohort is None
+
+
+def test_tables_written_by_a_job_are_reread(window, tmp_path):
+    path = make_cohort(tmp_path)
+    window.open_cohort(path)                      # not scanned yet
+    assert not window.controller.state.statuses["scan"].done
+    _scan(path)                                   # what the scan job writes
+    window.controller.reload_tables()             # done after every finished job
+    window.controller.refresh_status()
+    assert window.controller.state.statuses["scan"].done

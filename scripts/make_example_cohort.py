@@ -12,7 +12,8 @@ What it writes, under ``<workspace>/<name>/``:
                           frames reflectance (bright). Each TIFF header holds the time between
                           two frames (``Time_From_Last``), which step 2 reads.
 
-The activity is built so the analysis has something to find: regions that belong together
+The images have a dark midline vessel, strong in reflectance and faint in GCaMP, as the
+channel-rectangle rule expects. The activity is built so the analysis has something to find: regions that belong together
 (left and right motor areas, the somatosensory areas, the visual areas) share a slow random
 signal, and at 3D the motor signal is weaker.
 
@@ -123,6 +124,17 @@ def region_maps(shape: tuple[int, int]) -> tuple[np.ndarray, dict[str, np.ndarra
     return mask, {group: np.clip(m, 0, 1) * mask for group, m in maps.items()}
 
 
+def midline_sinus(shape: tuple[int, int]) -> np.ndarray:
+    """The dark vessel along the midline (superior sagittal sinus), 0..1, in raw pixels.
+
+    Reflectance shows it with strong contrast and GCaMP only faintly: that is what the
+    channel-rectangle rule looks at, so the example agrees with it.
+    """
+    cols = np.arange(shape[1], dtype=np.float64)
+    profile = np.exp(-((cols - 2 * BREGMA[1]) ** 2) / (2 * 5.0 ** 2))
+    return np.broadcast_to(profile, shape).copy()
+
+
 def slow_signal(rng: np.random.Generator, n: int, smoothing: float = 0.8) -> np.ndarray:
     """A slow random signal (AR(1)), unit standard deviation."""
     values = np.zeros(n)
@@ -135,8 +147,9 @@ def slow_signal(rng: np.random.Generator, n: int, smoothing: float = 0.8) -> np.
 def recording_frames(rng: np.random.Generator, n_per_channel: int, timepoint: str,
                      mask: np.ndarray, maps: dict[str, np.ndarray]) -> list[np.ndarray]:
     """Interleaved frames: GCaMP, reflectance, GCaMP, ... (uint16)."""
-    gcamp_base = np.where(mask, 2000.0, 300.0)
-    reflectance_base = np.where(mask, 6000.0, 500.0)
+    sinus = midline_sinus(FRAME_SHAPE) * mask
+    gcamp_base = np.where(mask, 2000.0, 300.0) * (1.0 - 0.05 * sinus)
+    reflectance_base = np.where(mask, 6000.0, 500.0) * (1.0 - 0.40 * sinus)
     shared = slow_signal(rng, n_per_channel)
     amplitude = {"motor": 0.06 if timepoint == "BL" else 0.02, "sensory": 0.05,
                  "visual": 0.05, "retrosplenial": 0.04}

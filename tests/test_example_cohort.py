@@ -91,6 +91,10 @@ def test_example_cohort_runs_every_step_and_leaves_the_code_folder_unchanged(tmp
     assert statuses()["extract"].done, statuses()["extract"].detail
 
     run_job("qc", cohort_file, base_env)
+    import pandas as pd
+    qc = pd.read_csv(load_cohort(cohort_file).layout.outputs / "qc_table.csv", dtype=str, keep_default_na=False)
+    assert set(qc["rect_agrees"]) == {"True"}, qc[["recording", "rect_channel_order", "rect_ratio"]]
+    assert set(qc["suggest"]) == {"ok"}, qc[["recording", "reason"]]
     cohort = load_cohort(cohort_file)
     cohort.data["exclusions_confirmed"] = True               # the QC page's Confirm
     save_cohort(cohort)

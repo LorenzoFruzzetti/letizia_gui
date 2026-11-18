@@ -103,6 +103,17 @@ class Controller(QtCore.QObject):
         self.state.dirty_tables = set()
         self.refresh_status()
 
+    def reload_tables(self) -> None:
+        """Reread the tables a job may have written (the scan writes recordings.csv), except
+        those with unsaved edits, so the status reflects the files on disk."""
+        cohort = self.state.cohort
+        if cohort is None:
+            return
+        fresh = load_tables(cohort)
+        for kind in TABLE_KINDS:
+            if kind not in self.state.dirty_tables:
+                self.state.tables[kind] = fresh[kind]
+
     def close_cohort(self) -> None:
         self.state.cohort = None
         self.state.tables = {}
@@ -410,6 +421,7 @@ class Controller(QtCore.QObject):
         if not self.queue.pending:
             keep_awake(False)
         self.state.busy = False
+        self.reload_tables()
         self._after(job)
         self.refresh_status()
         self.queue_changed.emit()
