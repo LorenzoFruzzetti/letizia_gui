@@ -1,10 +1,18 @@
-"""Cohort file (``cohorts/<name>.yaml``) and its three tables: load, validate, save, diff.
+"""Cohort file (``<workspace>/<cohort>/cohort.yaml``) and its three tables: load, validate,
+save, diff.
+
+The cohort file holds what only the user knows about a cohort: its name, where the raw
+data is, the timepoints, the acquisition facts, the exclusions and the parameter
+overrides. Every other location is fixed by the cohort folder (``layout.CohortLayout``).
 
 Rules:
-  * unknown keys are rejected on load (a typo must not be silently ignored);
-  * relative paths are relative to the repository root (REPO_ROOT);
+  * unknown keys are rejected on load (a typo must not be silently ignored), and so are
+    the path keys of the older per-repository layout (``REMOVED_KEYS``);
+  * relative paths (``raw_root``, ``pixel_root``) are relative to the cohort folder;
   * saves are atomic (write a temporary file next to the target, then rename), and the
-    GUI shows ``diff_text`` against the file on disk before it saves.
+    GUI shows ``diff_text`` against the file on disk before it saves;
+  * a save writes ``app_version`` (the version doing the save); ``newer_app_version``
+    tells when a file was saved by a newer version than this one.
 
 Tables are kept as DataFrames of strings (``dtype=str``), so what the user typed is
 what is saved; booleans are normalised to ``true`` / ``false`` on import.
@@ -24,34 +32,31 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from . import REPO_ROOT
+from .. import APP_VERSION
+from .layout import TABLE_KINDS, CohortLayout, require_cohort_file, resolve_in_cohort
 
 # ----------------------------------------------------------------------------- schema
 # Top-level keys, in the order they are written back. Required keys have no default.
-REQUIRED_KEYS = (
-    "name", "raw_root", "pixel_root", "output_root", "manifest", "roi_set_dir",
-    "timepoints", "acquisition", "tables",
-)
+REQUIRED_KEYS = ("name", "raw_root", "timepoints", "acquisition")
 OPTIONAL_KEYS = {
-    "link_root": None,                       # junction view; None = no junctions
-    "reviewed_roi_set_dir": "roi_sets/reviewed",
-    "manifest_paths": None,                  # "link" | "raw"; None = link if link_root
-    "connectivity_root": None,               # None = <output_root>/roi_pixel_connectivity
-    "stats_root": None,                      # None = <output_root>/detrended_stats
-    "design_csv": None,                      # None = <pixel_root>/experimental_design.csv
+    "app_version": None,                     # version that last saved the file (written on save)
+    "pixel_root": None,                      # None = <cohort folder>/pixel_data
     "exclusions": [],                        # written by the QC page
     "exclusions_confirmed": False,           # step 5 is done only once this is true
     "overrides": {},                         # per job: only values that differ from defaults
 }
 KEY_ORDER = (
-    "name", "raw_root", "link_root", "pixel_root", "output_root", "manifest",
-    "manifest_paths", "roi_set_dir", "reviewed_roi_set_dir", "connectivity_root",
-    "stats_root", "design_csv", "timepoints", "acquisition", "tables", "exclusions",
-    "exclusions_confirmed", "overrides",
+    "app_version", "name", "raw_root", "pixel_root", "timepoints", "acquisition",
+    "exclusions", "exclusions_confirmed", "overrides",
+)
+# Path keys of the older layout; their locations are now fixed by the cohort folder.
+REMOVED_KEYS = (
+    "link_root", "output_root", "manifest", "manifest_paths", "roi_set_dir",
+    "reviewed_roi_set_dir", "connectivity_root", "stats_root", "design_csv", "tables",
 )
 # Acquisition facts (step 2). Every field may be null until step 2 fills it.
 ACQUISITION_KEYS = {
-    "sampling_rate_hz": (int, float),        # per channel, e.g. 10 or 25
+    "sampling_rate_hz": (int, float),        # per channel frame rate, e.g. 10 or 25
     "frame_order": (str,),                   # "name" | "number"
     "trim_s": (int, float),                  # onset trim per channel, seconds
     "rot90_k": (int,),
@@ -61,14 +66,15 @@ ACQUISITION_KEYS = {
     "confirmed": (bool,),                    # the user confirmed the facts on the page
 }
 FRAME_ORDERS = ("name", "number")
-MANIFEST_PATH_STYLES = ("link", "raw")
-TABLE_KINDS = ("sessions", "animals", "recordings")
 # Groups of overrides, one per job the GUI runs (logic/params.py uses the same keys).
 OVERRIDE_GROUPS = (
-    "scan", "facts", "bake", "roi_select", "rebuild", "preflight", "extract", "qc",
+    "scan", "facts", "bake", "rebuild", "preflight", "extract", "qc",
     "cache_median", "cache_blpedestal", "design", "connectivity", "stats", "analysis_a",
 )
+# The analysis-A page's choices (overrides.analysis_a); anything else is a typo.
+ANALYSIS_A_KEYS = ("variants", "baseline", "timepoints", "animals", "focus")
 RECORDING_KEY_RE = re.compile(r"^\d{6}_[^/\\]+/[^/\\]+$")    # 200101_A1_000/t3
+VERSION_RE = re.compile(r"^\d+(\.\d+)*$")
 
 
 class CohortError(ValueError):
@@ -91,8 +97,6 @@ class Cohort:
         """Value of a top-level key, falling back to its documented default."""
         if key in self.data:
             return self.data[key]
-        if key == "manifest_paths":
-            return "link" if self.data.get("link_root") else "raw"
         return copy.deepcopy(OPTIONAL_KEYS[key])
 
     @property
@@ -114,29 +118,21 @@ class Cohort:
         return dict(self.get("overrides").get(group, {}))
 
     # --- paths ----------------------------------------------------------------------
-    def path_of(self, key: str) -> Path | None:
-        """Absolute path of a path-valued key (relative values are under REPO_ROOT)."""
-        value = self.get(key)
-        if value is None:
-            if key == "connectivity_root":
-                return self.path_of("output_root") / "roi_pixel_connectivity"
-            if key == "stats_root":
-                return self.path_of("output_root") / "detrended_stats"
-            if key == "design_csv":
-                return self.path_of("pixel_root") / "experimental_design.csv"
-            return None
-        return resolve_path(value)
+    @property
+    def layout(self) -> CohortLayout:
+        """Every fixed location of this cohort (derived from the cohort file's folder)."""
+        if self.path is None:
+            raise ValueError(f"cohort {self.name!r} has no file yet, so it has no folder")
+        return CohortLayout(self.path, self.data.get("pixel_root"))
+
+    @property
+    def raw_root(self) -> Path:
+        """The raw data folder (a relative value is relative to the cohort folder)."""
+        return resolve_in_cohort(self.layout.folder, self.data["raw_root"])
 
     def table_path(self, kind: str) -> Path:
-        """Tables live next to the cohort file (``cohorts/<name>/<kind>.csv``)."""
-        base = self.path.parent if self.path is not None else REPO_ROOT / "cohorts"
-        return (base / self.data["tables"][kind]).resolve()
-
-
-def resolve_path(value: str | Path) -> Path:
-    """Absolute path; relative values are relative to the repository root."""
-    path = Path(value)
-    return path if path.is_absolute() else (REPO_ROOT / path)
+        """``<cohort folder>/tables/<kind>.csv``."""
+        return self.layout.table(kind)
 
 
 # ----------------------------------------------------------------------------- validate
@@ -148,36 +144,33 @@ def validate_cohort(data: Any, where: str = "cohort file") -> dict[str, Any]:
     """Return ``data`` unchanged if valid; raise CohortError naming the first problem."""
     if not isinstance(data, dict):
         _fail(where, "the file must contain a mapping of keys")
+    removed = [key for key in REMOVED_KEYS if key in data]
+    if removed:
+        _fail(where, f"key(s) {removed} are no longer used: every location except raw_root and "
+                     "pixel_root is fixed by the cohort folder; remove them")
     unknown = set(data) - set(REQUIRED_KEYS) - set(OPTIONAL_KEYS)
     if unknown:
         _fail(where, f"unknown key(s) {sorted(unknown)}; allowed: {list(KEY_ORDER)}")
     missing = [key for key in REQUIRED_KEYS if key not in data]
     if missing:
         _fail(where, f"missing required key(s) {missing}")
-    for key in ("name", "raw_root", "pixel_root", "output_root", "manifest", "roi_set_dir"):
+    for key in ("name", "raw_root"):
         if not isinstance(data[key], str) or not data[key].strip():
             _fail(where, f"'{key}' must be a non-empty text value")
     if not re.fullmatch(r"[A-Za-z0-9_\-]+", data["name"]):
         _fail(where, "'name' may contain only letters, digits, '_' and '-'")
-    for key in ("link_root", "reviewed_roi_set_dir", "connectivity_root", "stats_root", "design_csv"):
-        if data.get(key) is not None and not isinstance(data[key], str):
-            _fail(where, f"'{key}' must be text or null")
-    if data.get("manifest_paths") is not None and data["manifest_paths"] not in MANIFEST_PATH_STYLES:
-        _fail(where, f"'manifest_paths' must be one of {MANIFEST_PATH_STYLES}")
-    if data.get("manifest_paths") == "link" and not data.get("link_root"):
-        _fail(where, "'manifest_paths: link' needs a 'link_root'")
+    pixel_root = data.get("pixel_root")
+    if pixel_root is not None and (not isinstance(pixel_root, str) or not pixel_root.strip()):
+        _fail(where, "'pixel_root' must be a non-empty text value or null")
+    version = data.get("app_version")
+    if version is not None and (not isinstance(version, str) or not VERSION_RE.match(version)):
+        _fail(where, f"'app_version' must be a version like '1.2.0', not {version!r}")
     timepoints = data["timepoints"]
     if (not isinstance(timepoints, list) or not timepoints
             or not all(isinstance(t, str) and t for t in timepoints)
             or len(set(timepoints)) != len(timepoints)):
         _fail(where, "'timepoints' must be a non-empty list of distinct names, e.g. [BL, 3D]")
     _validate_acquisition(data["acquisition"], where)
-    tables = data["tables"]
-    if not isinstance(tables, dict) or set(tables) != set(TABLE_KINDS):
-        _fail(where, f"'tables' must name exactly {list(TABLE_KINDS)}")
-    for kind, value in tables.items():
-        if not isinstance(value, str) or not value.endswith(".csv"):
-            _fail(where, f"'tables.{kind}' must be a .csv path")
     exclusions = data.get("exclusions", [])
     if not isinstance(exclusions, list):
         _fail(where, "'exclusions' must be a list")
@@ -202,6 +195,10 @@ def validate_cohort(data: Any, where: str = "cohort file") -> dict[str, Any]:
             _fail(where, f"overrides: unknown job {group!r}; allowed: {list(OVERRIDE_GROUPS)}")
         if not isinstance(values, dict) or not all(isinstance(k, str) for k in values):
             _fail(where, f"overrides.{group} must be a mapping of parameter -> value")
+    unknown_choices = set(overrides.get("analysis_a", {})) - set(ANALYSIS_A_KEYS)
+    if unknown_choices:
+        _fail(where, f"overrides.analysis_a: unknown choice(s) {sorted(unknown_choices)}; "
+                     f"allowed: {list(ANALYSIS_A_KEYS)}")
     return data
 
 
@@ -234,11 +231,27 @@ def acquisition_missing(block: dict[str, Any]) -> list[str]:
             if key not in ("expected_files", "confirmed") and block.get(key) is None]
 
 
+def acquisition_value(cohort: Cohort, key: str) -> Any:
+    """One acquisition fact a script needs; raises when step 2 has not filled it."""
+    value = cohort.acquisition.get(key)
+    if value is None:
+        raise ValueError(f"{cohort.path}: acquisition.{key} is not set (fill step 2, Acquisition facts)")
+    return value
+
+
 # ----------------------------------------------------------------------------- I/O
 def load_cohort(path: str | Path) -> Cohort:
     path = Path(path).resolve()
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return Cohort(validate_cohort(data, str(path)), path)
+
+
+def load_script_cohort(cohort_file: str | Path | None) -> Cohort:
+    """The cohort a script was given (``--cohort`` / ``RUN_CONFIG["cohort_file"]``).
+
+    Raises ``set cohort_file or pass --cohort`` when it was given none.
+    """
+    return load_cohort(require_cohort_file(cohort_file))
 
 
 def dump_cohort(data: dict[str, Any]) -> str:
@@ -273,40 +286,53 @@ def write_text_atomic(path: Path, text: str) -> None:
 
 
 def save_cohort(cohort: Cohort) -> None:
+    """Write the cohort file, stamped with the version doing the save."""
+    cohort.data["app_version"] = APP_VERSION
     write_text_atomic(cohort.path, dump_cohort(cohort.data))
 
 
 def pending_diff(cohort: Cohort) -> str:
     """Diff between the file on disk and what save_cohort would write."""
     old = cohort.path.read_text(encoding="utf-8") if cohort.path.exists() else ""
-    return diff_text(old, dump_cohort(cohort.data), cohort.path.name)
+    return diff_text(old, dump_cohort({**cohort.data, "app_version": APP_VERSION}), cohort.path.name)
 
 
-def new_cohort_data(name: str, raw_root: str, link_root: str | None, sampling_rate_hz: float | None,
+def version_tuple(version: str) -> tuple[int, ...]:
+    """'1.10.2' -> (1, 10, 2), compared number by number (so 1.10 is newer than 1.9)."""
+    if not VERSION_RE.match(str(version)):
+        raise ValueError(f"{version!r} is not a version like '1.2.0'")
+    return tuple(int(part) for part in str(version).split("."))
+
+
+def newer_app_version(cohort: Cohort, current: str = APP_VERSION) -> str | None:
+    """The cohort file's ``app_version`` when it is newer than ``current``, else None.
+
+    A file saved by a newer version may use keys or values this version does not know,
+    so the GUI refuses to open it (a file without ``app_version`` predates the key).
+    """
+    saved = cohort.data.get("app_version")
+    if saved is None:
+        return None
+    return saved if version_tuple(saved) > version_tuple(current) else None
+
+
+def new_cohort_data(name: str, raw_root: str, sampling_rate_hz: float | None,
                     frame_order: str | None, timepoints: list[str]) -> dict[str, Any]:
-    """Data of a new cohort file as the New-cohort wizard fills it (paths per convention)."""
+    """Data of a new cohort file as the New-cohort wizard fills it (locations are fixed)."""
     data = {
+        "app_version": APP_VERSION,
         "name": name,
         "raw_root": raw_root,
-        "link_root": link_root or None,
-        "pixel_root": f"pixel_data_{name}",
-        "output_root": f"outputs/{name}",
-        "manifest": f"manifests/{name}_manifest.csv",
-        "roi_set_dir": "roi_sets/rebuilt",
-        "reviewed_roi_set_dir": "roi_sets/reviewed",
         "timepoints": list(timepoints),
         "acquisition": {
             "sampling_rate_hz": sampling_rate_hz, "frame_order": frame_order, "trim_s": 2.0,
             "rot90_k": 0, "grid": [128, 128], "file_glob": "*.tif", "expected_files": None,
             "confirmed": False,
         },
-        "tables": {kind: f"{name}/{kind}.csv" for kind in TABLE_KINDS},
         "exclusions": [],
         "exclusions_confirmed": False,
         "overrides": {},
     }
-    if not link_root:
-        del data["link_root"]
     return validate_cohort(data, f"new cohort {name}")
 
 

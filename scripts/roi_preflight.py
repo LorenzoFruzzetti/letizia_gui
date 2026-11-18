@@ -15,7 +15,7 @@ front, with the batch's own conventions:
 A set drawn with Lambda above Bregma (``lambda_above_bregma``) puts V1 at negative rows and
 fails here by design: the dump window assumes Lambda below.
 
-Writes ``<output_root>/roi_preflight.csv`` (one row per recording) and exits with code 1
+Reads ``<cohort folder>/roi_sets/rebuilt``; writes ``<cohort folder>/outputs/roi_preflight.csv`` (one row per recording) and exits with code 1
 when any recording fails, so the job shows as failed.
 
     conda run --no-capture-output -n wfci_gui python -u roi_preflight.py --cohort <cohort folder>/cohort.yaml
@@ -33,10 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd  # noqa: E402
 import yaml  # noqa: E402
 
-from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
+from wfci_gui.logic.cohort import load_script_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,  # path to the cohort file (or pass --cohort)
+    "cohort_file": None,  # <cohort folder>/cohort.yaml (or pass --cohort)
     # Bregma-relative half-open window (rows start, rows end, cols start, cols end); must
     # equal extract_cohort.py's save_data_window.
     "window": [-29, 47, -44, 43],
@@ -46,7 +46,7 @@ RUN_CONFIG: dict[str, Any] = {
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Check every rebuilt ROI set of a cohort against the dump window.")
-    p.add_argument("--cohort", default=defaults["cohort"])
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"])
     p.add_argument("--window", type=int, nargs=4, default=defaults["window"],
                    metavar=("ROW0", "ROW1", "COL0", "COL1"))
     return p.parse_args()
@@ -84,13 +84,13 @@ def check_set(data: dict[str, Any], window: list[int], grid: list[int]) -> list[
 
 def main() -> None:
     args = build_runtime_args()
-    cohort = load_cohort(args.cohort)
+    cohort = load_script_cohort(args.cohort_file)
     tables = load_tables(cohort)
     used = used_recordings(tables)
     if used.empty:
         raise ValueError("no runnable recordings in recordings.csv")
     grid = cohort.acquisition.get("grid") or [128, 128]
-    rebuilt = cohort.path_of("roi_set_dir")
+    rebuilt = cohort.layout.rebuilt_roi_sets
     rows = []
     for recording in used.itertuples():
         name = f"{recording.day}_{recording.animal}_{recording.recording}.yaml"
@@ -105,7 +105,7 @@ def main() -> None:
                          bregma_row=data["bregma_row"], bregma_col=data["bregma_col"],
                          violations=len(problems), detail="; ".join(problems)))
     frame = pd.DataFrame(rows)
-    out = cohort.path_of("output_root") / "roi_preflight.csv"
+    out = cohort.layout.outputs / "roi_preflight.csv"
     write_text_atomic(out, frame.to_csv(index=False, lineterminator="\n"))
     failed = frame[frame["violations"] > 0]
     print(f"ROI sets checked: {len(frame)} (window {args.window}, grid {grid})")

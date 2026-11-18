@@ -18,13 +18,21 @@ from qtkit import ActionSpec
 from qtkit.qt import QtCore
 
 from . import sources
-from .logic import REPO_ROOT, EditorSettings
+from .logic import EditorSettings
 from .model import NUDGE_BIG, EditorModel
 
 from roi_editor import HELP  # noqa: E402,F401  (repo root, via logic; re-exported for the window)
 
 
 # ----------------------------------------------------------------------------- commands
+def workspace() -> Path:
+    """The main GUI's workspace (its Windows user settings), where the dialogs start."""
+    from wfci_gui.logic.workspace import (
+        SETTINGS_APPLICATION, SETTINGS_ORGANISATION, WORKSPACE_KEY, workspace_from_setting)
+    return workspace_from_setting(
+        QtCore.QSettings(SETTINGS_ORGANISATION, SETTINGS_APPLICATION).value(WORKSPACE_KEY))
+
+
 class KeyOp(NamedTuple):
     """One page command with the previous editor's id, label and single-key shortcut."""
     id: str
@@ -86,7 +94,7 @@ KEY_OPS: tuple[KeyOp, ...] = (
     KeyOp("toggle.mirror_lock", "Mirror lock on/off", "M", "SP_DialogYesButton", lambda m: m.toggle_mirror_lock()),
     KeyOp("toggle.rotate_with_lambda", "Rotate with Lambda on/off", "O", "SP_DialogYesButton",
           lambda m: m.toggle_rotate_with_lambda()),
-    KeyOp("rect.reset", "Reset rectangle to params.json", "", "SP_DialogResetButton", lambda m: m.reset_rectangle()),
+    KeyOp("rect.reset", "Reset rectangle to the cohort parameters", "", "SP_DialogResetButton", lambda m: m.reset_rectangle()),
     # Which interleaved group is GCaMP, the user's call for this recording (saved in its
     # ROI set as channel_order; the other group is reflectance).
     KeyOp("channel.odd", "Odd frames are GCaMP (even = reflectance)", "Alt+1", "SP_MediaSeekBackward",
@@ -257,8 +265,8 @@ class Controller:
         if settings is None:
             settings = self.window.ask_settings(
                 self._dialog_values(), need_folder=False,
-                note=f"No cohort file names {Path(path).name} as its manifest: give the settings "
-                     "its recordings are read with (the folder field is not used).")
+                note=f"{Path(path).name} is not in a cohort folder (no cohort.yaml next to it): give "
+                     "the settings its recordings are read with (the folder field is not used).")
             if settings is None:
                 return
         self.load(sources.load_manifest(path, settings, cohort))
@@ -271,12 +279,12 @@ class Controller:
         (self.open_cohort if kind == "cohort" else self.open_manifest)(path)
 
     def open_cohort_dialog(self) -> None:
-        path = self.window.choose_file("Open cohort", REPO_ROOT / "cohorts", "Cohort files (*.yaml)")
+        path = self.window.choose_file("Open cohort", workspace(), "Cohort files (cohort.yaml)")
         if path:
             self.open_cohort(path)
 
     def open_manifest_dialog(self) -> None:
-        path = self.window.choose_file("Open manifest", REPO_ROOT / "manifests", "Manifests (*.csv)")
+        path = self.window.choose_file("Open manifest", workspace(), "Manifests (*.csv)")
         if path:
             self.open_manifest(path)
 
@@ -305,7 +313,7 @@ class Controller:
         else:
             # A cohort: its manifest (or folder scan) again, read with the new settings.
             from wfci_gui.logic.cohort import load_cohort
-            manifest = load_cohort(data.cohort).path_of("manifest")
+            manifest = load_cohort(data.cohort).layout.manifest
             pages, args, profile, preview_only, notes = (
                 sources.pages_from_manifest(manifest, settings) if manifest is not None and manifest.is_file()
                 else sources.pages_from_folders(settings, data.cohort))
@@ -492,7 +500,7 @@ class Controller:
         self.cache_worker.progress.connect(self.window.log)
         self.cache_worker.done.connect(self._cache_done)
         self.window.notify(f"Caching {len(jobs)} page(s) in "
-                           f"{Path(self.settings.roi_set_dir) / sources.CACHE_FOLDER} …")
+                           f"{self.settings.cache_dir} …")
         self.cache_thread.start()
         self.window.update_actions()
 

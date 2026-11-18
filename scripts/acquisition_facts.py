@@ -9,7 +9,7 @@ For the first runnable recording of every session it reports:
   * LED-setting tokens in the file names (``LEDB100_LEDV20``): a change between sessions is
     an illumination change that creates fake connectivity changes.
 
-It writes ``<output_root>/acquisition_facts.json`` and prints a table. It does not change the
+It writes ``<cohort folder>/outputs/acquisition_facts.json`` and prints a table. It does not change the
 cohort file: the user checks the values on the Acquisition page and confirms them there.
 
 Run it:
@@ -30,10 +30,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import tifffile  # noqa: E402
 
-from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
+from wfci_gui.logic.cohort import load_script_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,  # path to the cohort file (or pass --cohort)
+    "cohort_file": None,  # <cohort folder>/cohort.yaml (or pass --cohort)
     "headers_per_recording": 3,   # TIFF headers read per recording (Time_From_Last is per frame)
     "prefer_cli_args": True,
 }
@@ -44,7 +44,7 @@ NUMBER_RE = re.compile(r"(\d+)\.[^.]+$")
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Read frame rate, frame order and LED settings of a cohort.")
-    p.add_argument("--cohort", default=defaults["cohort"])
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"])
     p.add_argument("--headers-per-recording", type=int, default=defaults["headers_per_recording"])
     return p.parse_args()
 
@@ -93,7 +93,7 @@ def recording_facts(folder: Path, pattern: str, n_headers: int) -> dict[str, Any
 
 def main() -> None:
     args = build_runtime_args()
-    cohort = load_cohort(args.cohort)
+    cohort = load_script_cohort(args.cohort_file)
     tables = load_tables(cohort)
     used = used_recordings(tables)
     if used.empty:
@@ -115,7 +115,7 @@ def main() -> None:
         file_glob=f"*{sessions[0]['extension']}", image_shape=sessions[0]["image_shape"],
         rate_consistent=len(rates) == 1, frame_order_consistent=len(orders) == 1,
         led_settings_change=len(led_sets) > 1)
-    out = cohort.path_of("output_root") / "acquisition_facts.json"
+    out = cohort.layout.outputs / "acquisition_facts.json"
     write_text_atomic(out, json.dumps(dict(summary=summary, sessions=sessions), indent=2) + "\n")
 
     print(f"{'day':8}{'timepoint':10}{'rate Hz':>9}  {'frame order':12}{'shape':14}{'files':>6}  LED tokens")

@@ -1,9 +1,12 @@
 """Parameter presets.
 
-  * Per job: ``presets/<job>/<name>.json`` holds the overrides only, plus the sha256 of the
+  * Per job: ``<root>/<job>/<name>.json`` holds the overrides only, plus the sha256 of the
     script they were made for. Loading one made for a different script version warns.
   * Per cohort: export / import of every job's overrides in one JSON file.
 Loading always shows a diff against the current values before it is applied.
+
+``root`` is a presets folder of the workspace: the cohort's own (``CohortLayout.presets``)
+or the one shared by every cohort (``CohortLayout.workspace_presets``). Never the code folder.
 """
 
 from __future__ import annotations
@@ -13,11 +16,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import REPO_ROOT
 from .cohort import OVERRIDE_GROUPS, write_text_atomic
 from .jobs import timestamp
 
-PRESET_ROOT = REPO_ROOT / "presets"
 _MISSING = object()
 
 
@@ -25,26 +26,26 @@ class PresetError(ValueError):
     pass
 
 
-def preset_path(job: str, name: str, root: Path = PRESET_ROOT) -> Path:
+def preset_path(job: str, name: str, root: Path) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9_\- ]+", name):
         raise PresetError(f"preset name {name!r}: use letters, digits, spaces, '_' or '-'")
     return Path(root) / job / f"{name}.json"
 
 
-def list_presets(job: str, root: Path = PRESET_ROOT) -> list[str]:
+def list_presets(job: str, root: Path) -> list[str]:
     folder = Path(root) / job
     return sorted(p.stem for p in folder.glob("*.json")) if folder.is_dir() else []
 
 
 def save_preset(job: str, name: str, overrides: dict[str, Any], script_hash: str,
-                root: Path = PRESET_ROOT) -> Path:
+                root: Path) -> Path:
     path = preset_path(job, name, root)
     payload = dict(job=job, overrides=overrides, script_hash=script_hash, saved=timestamp())
     write_text_atomic(path, json.dumps(payload, indent=2, default=str) + "\n")
     return path
 
 
-def load_preset(job: str, name: str, root: Path = PRESET_ROOT) -> dict[str, Any]:
+def load_preset(job: str, name: str, root: Path) -> dict[str, Any]:
     payload = json.loads(preset_path(job, name, root).read_text(encoding="utf-8"))
     if payload.get("job") != job or not isinstance(payload.get("overrides"), dict):
         raise PresetError(f"{name}: not a preset for {job}")

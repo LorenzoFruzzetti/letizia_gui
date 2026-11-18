@@ -19,7 +19,7 @@ does not report:
                  mean images: which parity it calls GCaMP, and whether the batch's order agrees.
                  For a recording that needs a channel decision it is the proposed order. The
                  rectangle is the recording's own when its ROI set has a ``channel_rectangle``
-                 (moved in the ROI editor), else outputs/channel_rectangle/params.json's; the
+                 (moved in the ROI editor), else the cohort's channel_rectangle_params.json; the
                  ``rectangle_source`` column says which (``roi_set`` / ``params``).
   chosen order   ``channel_order`` the user set in the ROI editor for this recording, if any
                  (``chosen_order``), and whether the batch's order agrees with it.
@@ -27,7 +27,7 @@ does not report:
 NOTHING IS EXCLUDED HERE: ``suggest`` is ``exclude`` / ``check`` / ``ok``
 with a reason; the user decides on the QC page.
 
-Writes ``<output_root>/qc_table.csv`` and ``<output_root>/qc_levels_by_session.csv``.
+Writes ``qc_table.csv`` and ``qc_levels_by_session.csv`` in ``<cohort folder>/outputs``.
 
     conda run --no-capture-output -n wfci_gui python -u qc_cohort.py --cohort <cohort folder>/cohort.yaml
 """
@@ -45,19 +45,18 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import yaml  # noqa: E402
 
-from wfci_gui.logic.cohort import load_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
+from wfci_gui.logic.cohort import load_script_cohort, load_tables, used_recordings, write_text_atomic  # noqa: E402
 from wfci_gui.logic.steps import read_batch_summary, summary_status_by_key  # noqa: E402
 
 import channel_rectangle as rectangle  # noqa: E402
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,  # path to the cohort file (or pass --cohort)
+    "cohort_file": None,  # <cohort folder>/cohort.yaml (or pass --cohort)
     "glitch_threshold": 1.0,       # max |field mean| (ratio) above which exclusion is suggested
     "glitch_check": 0.2,           # above this, suggest checking R against the session-mates
     "trace_tolerance_pp": 0.01,    # dump-vs-CSV max difference (pp) above which to check
     "median_cache": "pixels_median_dff_20s_full.npy",  # glitch scan volume (ratio)
     "check_traces": True,          # False skips the dump-vs-CSV reduction (reads 40 MB per recording)
-    "channel_rectangle_params": "outputs/channel_rectangle/params.json",  # missing = module defaults
     "prefer_cli_args": True,
 }
 DUMP_FILES = ("pixels_dff_full.npy", "pixels_f_gcamp_full.npy", "pixels_f_emo_full.npy",
@@ -66,13 +65,12 @@ DUMP_FILES = ("pixels_dff_full.npy", "pixels_f_gcamp_full.npy", "pixels_f_emo_fu
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build the QC table of a cohort (suggestions only).")
-    p.add_argument("--cohort", default=defaults["cohort"])
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"])
     p.add_argument("--glitch-threshold", type=float, default=defaults["glitch_threshold"])
     p.add_argument("--glitch-check", type=float, default=defaults["glitch_check"])
     p.add_argument("--trace-tolerance-pp", type=float, default=defaults["trace_tolerance_pp"])
     p.add_argument("--median-cache", default=defaults["median_cache"])
     p.add_argument("--check-traces", action=argparse.BooleanOptionalAction, default=defaults["check_traces"])
-    p.add_argument("--channel-rectangle-params", default=defaults["channel_rectangle_params"])
     return p.parse_args()
 
 
@@ -166,12 +164,13 @@ def rectangle_columns(pixel_dir: Path, roi_set: Path, params) -> dict[str, Any]:
 def qc_row(key: str, cohort, summary_status: str | None, summary_row: dict, args) -> dict[str, Any]:
     unit, recording = key.split("/")
     day, animal = unit.split("_", 1)
-    output_dir = cohort.path_of("output_root") / unit / recording
-    pixel_dir = cohort.path_of("pixel_root") / unit / recording
-    roi_set = cohort.path_of("roi_set_dir") / f"{unit}_{recording}.yaml"
+    output_dir = cohort.layout.outputs / unit / recording
+    pixel_dir = cohort.layout.pixel_data / unit / recording
+    roi_set = cohort.layout.rebuilt_roi_sets / f"{unit}_{recording}.yaml"
     row: dict[str, Any] = dict(recording=key, day=day, animal=animal, rec=recording,
                                batch_status=summary_status or "not run",
                                channel_verdict=summary_row.get("channel_verdict", ""),
+                               channel_order_source=summary_row.get("channel_order_source", ""),
                                mean_offdiag_R=summary_row.get("mean_offdiag_R", ""))
     reasons_exclude, reasons_check = [], []
     npz = (output_dir / "connectivity_full.npz").exists()
@@ -243,8 +242,9 @@ def qc_row(key: str, cohort, summary_status: str | None, summary_row: dict, args
 
 def main() -> None:
     args = build_runtime_args()
-    args.rectangle_params = rectangle.params_or_default(args.channel_rectangle_params)
-    cohort = load_cohort(args.cohort)
+    cohort = load_script_cohort(args.cohort_file)
+    # The cohort's global rectangle parameters (the viewer's Save); missing = the defaults.
+    args.rectangle_params = rectangle.params_or_default(cohort.layout.channel_rectangle_params)
     tables = load_tables(cohort)
     used = used_recordings(tables)
     if used.empty:
@@ -259,7 +259,7 @@ def main() -> None:
     table = pd.DataFrame(rows)
     timepoint = dict(zip(tables["sessions"]["day"], tables["sessions"]["timepoint"]))
     table.insert(1, "timepoint", table["day"].map(timepoint))
-    out = cohort.path_of("output_root") / "qc_table.csv"
+    out = cohort.layout.outputs / "qc_table.csv"
     write_text_atomic(out, table.to_csv(index=False, lineterminator="\n"))
 
     levels = (table.dropna(subset=["gcamp_level"]).groupby(["day", "timepoint"], as_index=False)
@@ -268,7 +268,7 @@ def main() -> None:
     if not levels.empty:
         levels["gcamp_vs_first"] = (levels["gcamp_level"] / levels["gcamp_level"].iloc[0]).round(3)
         levels["emo_vs_first"] = (levels["emo_level"] / levels["emo_level"].iloc[0]).round(3)
-    levels_out = cohort.path_of("output_root") / "qc_levels_by_session.csv"
+    levels_out = cohort.layout.outputs / "qc_levels_by_session.csv"
     write_text_atomic(levels_out, levels.to_csv(index=False, lineterminator="\n"))
 
     print(f"\nQC table: {out}")

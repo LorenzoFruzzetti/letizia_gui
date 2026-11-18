@@ -25,7 +25,7 @@ class DesignCheck:
 
 def check_design(design: pd.DataFrame, baseline: str, timepoints: list[str],
                  animals: list[str]) -> DesignCheck:
-    """``design``: experimental_design.csv rows (animal, timepoint), excluded rows removed."""
+    """``design``: the cohort's design.csv rows (animal, timepoint), excluded rows removed."""
     if baseline not in timepoints:
         return DesignCheck(False, message=f"the baseline {baseline!r} must be one of the chosen timepoints")
     if len(timepoints) < 2:

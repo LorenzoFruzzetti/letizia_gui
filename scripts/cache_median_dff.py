@@ -1,7 +1,8 @@
 """Cache the per-pixel median-baseline dF/F of every pixel dump, once.
 
-For every `pixel_data/<date>_<animal>/<t#>/` written by extract_cohort.py
---save-data, computes over the WHOLE saved crop
+For every `<date>_<animal>/<t#>/` of the cohort's pixel dumps (its `pixel_data/`, or the
+cohort file's `pixel_root`) written by extract_cohort.py --save-data, computes over the
+WHOLE saved crop
 
     dF/F(t, p) = (F(t, p) / Fbar(t, p)) / (R(t, p) / Rbar(t, p)) - 1
 
@@ -28,10 +29,13 @@ Interruption is safe: the volume is written to a temporary name and renamed,
 and the meta JSON is written after it, so a recording without its JSON is
 simply recomputed on the next run.
 
-Examples (in the wfci_gui environment):
-    python cache_median_dff.py
-    python cache_median_dff.py --workers 1 --recording-limit 2
-    python cache_median_dff.py --dtype float32 --window-s 30
+The cache is written next to each dump. The frame rate is the cohort's
+acquisition.sampling_rate_hz.
+
+Examples (in the wfci_gui environment; C is <cohort folder>/cohort.yaml):
+    python cache_median_dff.py --cohort C
+    python cache_median_dff.py --cohort C --workers 1 --recording-limit 2
+    python cache_median_dff.py --cohort C --dtype float32 --window-s 30
 
 Edit RUN_CONFIG below to run directly from the editor without CLI arguments.
 """
@@ -53,14 +57,12 @@ import numpy as np
 
 from pixel_helpers import median_window_frames, running_median
 
-REPO_ROOT = Path(__file__).resolve().parent
-
 # Edit this section to run the cache build without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data",  # Contains <date>_<animal>/<t#>/pixels_meta_full.npz
-    "output_root": None,  # None: write next to each dump; otherwise mirror <unit>/<t#>/ under this folder.
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps
+    # (<date>_<animal>/<t#>/pixels_meta_full.npz) and its frame rate.
+    "cohort_file": None,
     "window_s": 20.0,  # Running-median baseline, seconds (20 s = 201 frames at 10 Hz).
-    "sampling_rate_hz": 10.0,  # Per-channel frame rate of the dumps.
     "dtype": "float16",  # "float16" (half the disk) or "float32" (exact); see the docstring.
     # Parallel processes; 1 runs serially in this process. About 1.1 GB RAM per worker;
     # more workers help up to about the core count, and 8 leaves a desktop usable meanwhile.
@@ -154,11 +156,9 @@ def build_one(job: dict[str, Any]) -> dict[str, Any]:
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pixel-root", type=Path, default=defaults["pixel_root"])
-    parser.add_argument("--output-root", type=Path, default=defaults["output_root"],
-                        help="Default: write next to each dump inside --pixel-root")
+    parser.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                        help="The cohort file, <cohort folder>/cohort.yaml")
     parser.add_argument("--window-s", type=float, default=defaults["window_s"])
-    parser.add_argument("--sampling-rate-hz", type=float, default=defaults["sampling_rate_hz"])
     parser.add_argument("--dtype", choices=DTYPES, default=defaults["dtype"])
     parser.add_argument("--workers", type=int, default=defaults["workers"],
                         help="Parallel processes; 1 runs serially in the main process")
@@ -170,8 +170,15 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+    # The dumps and the frame rate come from the cohort file.
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.sampling_rate_hz = float(acquisition_value(cohort, "sampling_rate_hz"))
+    return args
 
 
 def main():
@@ -194,8 +201,7 @@ def main():
     # One job per recording; the output folder mirrors <unit>/<t#>/.
     jobs = []
     for folder in folders:
-        output_folder = (folder if args.output_root is None
-                         else Path(args.output_root) / folder.parent.name / folder.name)
+        output_folder = folder
         _, meta_path = cache_paths(output_folder, args.window_s)
         if meta_path.exists() and not args.overwrite:
             continue

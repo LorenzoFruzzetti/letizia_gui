@@ -52,7 +52,11 @@ def test_cohort_round_trip_and_diff(tmp_path):
 
 @pytest.mark.parametrize("mutate, message", [
     (lambda d: d.update(typo_key=1), "unknown key"),
-    (lambda d: d.pop("manifest"), "missing required"),
+    (lambda d: d.pop("timepoints"), "missing required"),
+    (lambda d: d.update(manifest="manifest.csv"), "no longer used"),
+    (lambda d: d.update(link_root="links"), "no longer used"),
+    (lambda d: d.update(overrides={"analysis_a": {"stats_cohort": "default"}}), "unknown choice"),
+    (lambda d: d.update(app_version="new"), "app_version"),
     (lambda d: d["acquisition"].update(frame_order="random"), "frame_order"),
     (lambda d: d["acquisition"].update(colour="blue"), "acquisition: unknown"),
     (lambda d: d.update(exclusions=[{"recording": "200101_M1/t1", "reason": " "}]), "needs a reason"),
@@ -68,11 +72,67 @@ def test_cohort_validation_rejects(tmp_path, mutate, message):
         load_cohort(path)
 
 
-def test_relative_paths_are_relative_to_repo(tmp_path):
+def test_every_location_derives_from_the_cohort_folder(tmp_path):
+    path = make_cohort(tmp_path)
+    folder = path.parent
+    layout = load_cohort(path).layout
+    assert layout.folder == folder and layout.workspace == folder.parent
+    assert layout.table("recordings") == folder / "tables" / "recordings.csv"
+    assert layout.manifest == folder / "manifest.csv"
+    assert layout.design_csv == folder / "design.csv"
+    assert layout.links == folder / "links"
+    assert layout.reviewed_roi_sets == folder / "roi_sets" / "reviewed"
+    assert layout.rebuilt_roi_sets == folder / "roi_sets" / "rebuilt"
+    assert layout.alignment_images == folder / "roi_sets" / "alignment_images"
+    assert layout.pixel_data == folder / "pixel_data"
+    assert layout.outputs == folder / "outputs"
+    assert layout.logs == folder / "outputs" / "logs"
+    assert layout.job_history == folder / "outputs" / "gui_jobs.jsonl"
+    assert layout.channel_rectangle_params == folder / "channel_rectangle_params.json"
+    assert layout.presets == folder / "presets"
+    assert layout.workspace_presets == folder.parent / "presets"
+    # Nothing of the cohort is under the code folder.
+    assert REPO_ROOT not in layout.folder.parents
+
+
+def test_relative_paths_are_relative_to_the_cohort_folder(tmp_path):
+    path = make_cohort(tmp_path, raw_root="../../raw", pixel_root="dumps")
+    cohort = load_cohort(path)
+    assert cohort.raw_root.resolve() == (tmp_path / "raw").resolve()
+    assert cohort.layout.pixel_data == path.parent / "dumps"
+    absolute = tmp_path / "elsewhere"
+    cohort.data["pixel_root"] = str(absolute)
+    assert cohort.layout.pixel_data == absolute
+
+
+def test_save_writes_app_version_and_newer_files_are_reported(tmp_path):
+    from wfci_gui import APP_VERSION
+    from wfci_gui.logic.cohort import newer_app_version, version_tuple
     cohort = load_cohort(make_cohort(tmp_path))
-    cohort.data["pixel_root"] = "pixel_data_x"
-    assert cohort.path_of("pixel_root") == REPO_ROOT / "pixel_data_x"
-    assert cohort.path_of("design_csv") == REPO_ROOT / "pixel_data_x" / "experimental_design.csv"
+    assert "app_version" not in cohort.data and newer_app_version(cohort) is None
+    save_cohort(cohort)
+    assert load_cohort(cohort.path).data["app_version"] == APP_VERSION
+    assert newer_app_version(load_cohort(cohort.path)) is None
+    major, minor, *_ = version_tuple(APP_VERSION)
+    newer = f"{major}.{minor + 1}.0"
+    cohort.data["app_version"] = newer
+    cohort.path.write_text(dump_cohort(cohort.data), encoding="utf-8")
+    assert newer_app_version(load_cohort(cohort.path)) == newer
+    assert newer_app_version(load_cohort(cohort.path), current="99.0") is None
+    assert version_tuple("1.10.0") > version_tuple("1.9.3")          # numeric, not text order
+
+
+def test_a_script_without_a_cohort_stops_with_the_message(monkeypatch):
+    import build_cohort_design
+    import roi_preflight
+    import extract_cohort
+    monkeypatch.setattr(sys, "argv", ["script.py"])
+    for module in (build_cohort_design, roi_preflight):
+        with pytest.raises(ValueError, match="^set cohort_file or pass --cohort$"):
+            module.main()
+        assert module.RUN_CONFIG["cohort_file"] is None
+    with pytest.raises(ValueError, match="^set cohort_file or pass --cohort$"):
+        extract_cohort.build_runtime_args(dict(extract_cohort.RUN_CONFIG, prefer_cli_args=False))
 
 
 # ----------------------------------------------------------------------------- tables
@@ -133,9 +193,9 @@ def test_command_building():
     command = python_command(Path("/c/conda.bat"), ["script.py", "--x", "1"])
     assert command[1:7] == ["run", "--no-capture-output", "-n", "wfci_gui", "python", "-u"]
     assert command[7:] == ["script.py", "--x", "1"]
-    environment = job_environment(Path("/repo"), {"CONNECTIVITY_STATS_COHORT": "default"}, base={})
+    environment = job_environment(Path("/repo"), {"CONNECTIVITY_STATS_TIME_AXIS": "timepoint"}, base={})
     assert environment["PYTHONPATH"] == f"{Path('/repo/src')};{Path('/repo/scripts')}"
-    assert environment["CONNECTIVITY_STATS_COHORT"] == "default"
+    assert environment["CONNECTIVITY_STATS_TIME_AXIS"] == "timepoint"
     with pytest.raises(ValueError, match="cmd.exe"):
         check_arguments(["--label", "dF/F (%)"])
 
@@ -286,7 +346,7 @@ def test_status_follows_the_files_on_disk(tmp_path):
     assert statuses["rois"].detail.startswith("0 of 8 drawn")
 
     keys = recording_keys()
-    write_rebuilt_sets(cohort.path_of("roi_set_dir"), keys)
+    write_rebuilt_sets(cohort.layout.rebuilt_roi_sets, keys)
     import roi_preflight
     sys_argv = sys.argv
     sys.argv = ["roi_preflight.py", "--cohort", str(path)]
@@ -296,20 +356,20 @@ def test_status_follows_the_files_on_disk(tmp_path):
     assert exit_info.value.code == 0
     assert compute_statuses(cohort, tables, None, [])["rois"].done
 
-    write_extraction(cohort.path_of("output_root"), cohort.path_of("pixel_root"), keys,
+    write_extraction(cohort.layout.outputs, cohort.layout.pixel_data, keys,
                      needs_decision=(keys[0],))
     statuses = compute_statuses(cohort, tables, None, [])
     assert statuses["extract"].done and "1 need a channel decision" in statuses["extract"].detail
     assert not statuses["qc"].done
 
-    (cohort.path_of("output_root") / "qc_table.csv").write_text("recording\n", encoding="utf-8")
+    (cohort.layout.outputs / "qc_table.csv").write_text("recording\n", encoding="utf-8")
     cohort.data["exclusions"] = [{"recording": keys[0], "reason": "no alternation"}]
     cohort.data["exclusions_confirmed"] = True
     statuses = compute_statuses(cohort, tables, None, [])
     assert statuses["qc"].done
     assert not statuses["caches"].done                       # no cache markers yet
     for key in keys[1:]:
-        (cohort.path_of("pixel_root") / key / "pixels_median_dff_20s_meta.json").write_text("{}")
+        (cohort.layout.pixel_data / key / "pixels_median_dff_20s_meta.json").write_text("{}")
     assert compute_statuses(cohort, tables, None, [])["caches"].done
 
     import build_cohort_design
@@ -319,18 +379,18 @@ def test_status_follows_the_files_on_disk(tmp_path):
     sys.argv = sys_argv
     statuses = compute_statuses(load_cohort(path), tables, None, [])
     assert statuses["design"].done, statuses["design"].detail
-    design = pd.read_csv(cohort.path_of("design_csv"), dtype=str)
+    design = pd.read_csv(cohort.layout.design_csv, dtype=str)
     assert len(design) == 7 and set(design["timepoint"]) == {"BL", "3D"}   # excluded one is out
 
     # Analysis A: present and fresh -> done; an input rewritten later -> stale, not done.
-    root = cohort.path_of("connectivity_root")
+    root = cohort.layout.connectivity
     for variant in ("pixels_dff_full", "pixels_dff_full_gsr", "pixels_median_dff_20s_full",
                     "pixels_median_dff_20s_full_gsr"):
         for key in keys[1:]:
             (root / variant / key).mkdir(parents=True)
             (root / variant / key / "roi_pixel_connectivity.npz").write_bytes(b"x")
     assert compute_statuses(cohort, tables, None, [])["analysis_a"].done
-    volume = cohort.path_of("pixel_root") / keys[1] / "pixels_dff_full.npy"
+    volume = cohort.layout.pixel_data / keys[1] / "pixels_dff_full.npy"
     later = os.stat(volume).st_mtime + 100
     os.utime(volume, (later, later))
     status = compute_statuses(cohort, tables, None, [])["analysis_a"]
@@ -369,12 +429,12 @@ def test_scan_refuses_unknown_animal_folder(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="junctions are Windows-only")
 def test_scan_creates_junction_view(tmp_path):
-    path = make_cohort(tmp_path, link_root=True)
+    path = make_cohort(tmp_path)
     _scan(path)
-    link = tmp_path / "links" / "200104" / "M2" / "t1"
+    link = path.parent / "links" / "200104" / "M2" / "t1"
     assert link.is_dir() and len(list(link.glob("*.tif"))) == 6
     _scan(path)                     # second run: existing junctions are accepted, nothing raises
-    manifest = (tmp_path / "manifests" / "fake_manifest.csv").read_text(encoding="utf-8")
+    manifest = (path.parent / "manifest.csv").read_text(encoding="utf-8")
     assert str(link) in manifest
 
 
@@ -390,3 +450,98 @@ def test_dump_cohort_rejects_invalid(tmp_path):
     data = dict(cohort.data, name="bad name")
     with pytest.raises(CohortError):
         dump_cohort(data)
+
+
+# ----------------------------------------------------------------------------- scripts take --cohort
+def test_exclusions_come_from_the_cohort_file(tmp_path):
+    import roi_pixel_connectivity
+    path = make_cohort(tmp_path, exclusions=[{"recording": "200101_M1/t1", "reason": "glitch"}])
+    args = roi_pixel_connectivity.build_runtime_args(
+        dict(roi_pixel_connectivity.RUN_CONFIG, cohort_file=str(path), prefer_cli_args=False))
+    assert args.exclude_recordings == ["200101_M1/t1"]
+    assert args.pixel_root == path.parent / "pixel_data"
+    assert args.output_root == path.parent / "outputs" / "roi_pixel_connectivity"
+
+
+def test_extraction_folders_and_frames_come_from_the_cohort_file(tmp_path):
+    import extract_cohort
+    path = make_cohort(tmp_path, pixel_root="dumps")
+    args = extract_cohort.build_runtime_args(
+        dict(extract_cohort.RUN_CONFIG, cohort_file=str(path), prefer_cli_args=False))
+    folder = path.parent
+    assert Path(args.manifest) == folder / "manifest.csv"
+    assert Path(args.output_root) == folder / "outputs"
+    assert Path(args.roi_set_dir) == folder / "roi_sets" / "rebuilt"
+    assert Path(args.save_data_root) == folder / "dumps"
+    # acquisition: *.tif, rot90 0, frame order number, 2 s at 25 Hz = 50 frames
+    assert (args.pattern, args.rot90_k, args.frame_order, args.trim_frames) == ("*.tif", 0, "number", 50)
+
+
+def test_every_gui_job_passes_the_cohort_file_not_paths(tmp_path):
+    from wfci_gui.logic.params import JOBS, build_arguments
+    path = make_cohort(tmp_path, overrides={"analysis_a": {"animals": ["M1", "M2"], "baseline": "BL"}})
+    cohort = load_cohort(path)
+    tables = load_tables(cohort)
+    for job in ("scan", "facts", "bake", "preflight", "extract", "qc", "cache_median", "cache_blpedestal",
+                "design", "connectivity", "stats"):
+        built = build_arguments(job, cohort, tables)
+        index = built.arguments.index("--cohort")
+        assert built.arguments[index + 1] == str(path), job
+        for flag in ("--pixel-root", "--output-root", "--manifest", "--roi-set-dir", "--design-csv",
+                     "--exclude-recordings", "--save-data-root"):
+            assert flag not in built.arguments, (job, flag)
+    stats = build_arguments("stats", cohort, tables)
+    assert [Path(a).relative_to(REPO_ROOT).as_posix() for a in stats.arguments[:2]] == [
+        "scripts/run_with_overrides.py", "scripts/connectivity_stats.py"]
+    tail = stats.arguments[stats.arguments.index("--") + 1:]
+    assert tail[tail.index("--baseline") + 1] == "BL"
+    assert tail[tail.index("--animals") + 1:tail.index("--animals") + 3] == ["M1", "M2"]
+    assert not any(name.endswith("_COHORT") or name.endswith("OUTPUT_ROOT") for name in stats.env)
+    # The cohort needs no entry in the script: no job is refused for want of one.
+    assert "stats_cohort" not in str(JOBS["stats"].fixed(cohort, tables, None))
+
+
+def test_acquisition_not_filled_refuses_the_extraction_job(tmp_path):
+    from wfci_gui.logic.params import build_arguments
+    path = make_cohort(tmp_path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["acquisition"]["sampling_rate_hz"] = None
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    cohort = load_cohort(path)
+    with pytest.raises(ValueError, match="acquisition.sampling_rate_hz"):
+        build_arguments("extract", cohort, load_tables(cohort))
+
+def test_step4_is_stale_when_the_roi_set_channel_order_changes(tmp_path):
+    import numpy as np
+    path = make_cohort(tmp_path)
+    _scan(path, "--no-make-links")
+    cohort = load_cohort(path)
+    tables = load_tables(cohort)
+    keys = recording_keys()
+    write_rebuilt_sets(cohort.layout.rebuilt_roi_sets, keys)
+    write_extraction(cohort.layout.outputs, cohort.layout.pixel_data, keys)
+    for key in keys:      # real result files: the order each recording was extracted with
+        np.savez(cohort.layout.outputs / key / "connectivity_full.npz", channel_order=np.array("gcamp_first"))
+    assert compute_statuses(cohort, tables, None, [])["extract"].done
+
+    unit, recording = keys[0].split("/")
+    roi_set = cohort.layout.rebuilt_roi_sets / f"{unit}_{recording}.yaml"
+    with open(roi_set, "a", encoding="utf-8") as handle:
+        handle.write("channel_order: gcamp_first\n")          # the order it already has
+    assert compute_statuses(cohort, tables, None, [])["extract"].done
+
+    roi_set.write_text(roi_set.read_text(encoding="utf-8").replace("gcamp_first", "emo_first"),
+                       encoding="utf-8")
+    status = compute_statuses(cohort, tables, None, [])["extract"]
+    assert not status.done and "1 stale (channel order changed)" in status.detail
+    assert any(keys[0] in warning for warning in status.warnings)
+
+
+def test_workspace_must_be_outside_the_code_folder(tmp_path):
+    from wfci_gui.logic.workspace import default_workspace, workspace_problem
+    assert default_workspace({"USERPROFILE": str(tmp_path)}) == tmp_path / "Documents" / "WFCI"
+    assert workspace_problem(tmp_path / "WFCI") is None
+    assert "inside the program folder" in workspace_problem(REPO_ROOT / "data")
+    assert "not a full path" in workspace_problem("WFCI")
+    (tmp_path / "file.txt").write_text("x")
+    assert "is a file" in workspace_problem(tmp_path / "file.txt")

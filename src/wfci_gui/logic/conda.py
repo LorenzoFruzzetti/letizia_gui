@@ -78,11 +78,20 @@ def powershell_command(script: Path, arguments: list[str] | None = None) -> list
             *[str(a) for a in arguments or []]]
 
 
+def pycache_prefix(environ: dict[str, str] | None = None) -> Path:
+    r"""``%LOCALAPPDATA%\wfci_gui\pycache``: where Python writes bytecode for the GUI and its jobs."""
+    environ = os.environ if environ is None else environ
+    base = environ.get("LOCALAPPDATA") or str(Path.home() / ".cache")
+    return Path(base) / "wfci_gui" / "pycache"
+
+
 def job_environment(repo_root: Path, extra: dict[str, str] | None = None,
                     base: dict[str, str] | None = None) -> dict[str, str]:
     """Environment of a job: the GUI's own, plus PYTHONPATH and the job's variables."""
     environment = dict(os.environ if base is None else base)
     environment["PYTHONPATH"] = f"{repo_root / 'src'};{repo_root / 'scripts'}"
+    # Bytecode goes to the user's local folder, never into the code folder (M8).
+    environment["PYTHONPYCACHEPREFIX"] = str(pycache_prefix(environment))
     environment["PYTHONUNBUFFERED"] = "1"
     environment.update({key: str(value) for key, value in (extra or {}).items()})
     return environment

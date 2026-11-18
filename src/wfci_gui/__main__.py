@@ -1,4 +1,4 @@
-"""Entry point: ``python -m wfci_gui [cohorts/<name>.yaml]``.
+"""Entry point: ``python -m wfci_gui [<workspace>/<cohort>/cohort.yaml]``.
 
 Run it through conda, from the repository root:
 
@@ -67,6 +67,9 @@ def main() -> None:
     install_excepthook(config_dir, lambda: holder[0] if holder else None)
     window = MainWindow(QtCore.QSettings("wfci_gui", "wfci_gui"), config_dir)
     holder.append(window)
+    # First launch: the user chooses where the cohorts are kept (cancel quits).
+    if not window.has_workspace() and not window.choose_workspace(first=True):
+        sys.exit(0)
     if args.cohort:
         window.open_cohort(Path(args.cohort))
     window.show()

@@ -30,7 +30,8 @@ import numpy as np
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+SCRIPTS = REPO_ROOT / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 # Must precede any Qt import, hence before roi_editor's editor is built.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -206,7 +207,7 @@ def test_importing_roi_editor_does_not_pull_in_qt():
         "gui = sorted({m.split('.')[0] for m in sys.modules"
         " if m.split('.')[0] in ('PySide6','PySide2','PyQt5','PyQt6','pyqtgraph')});"
         "print(','.join(gui));"
-        "assert callable(roi_editor.load_roi_set)" % REPO_ROOT
+        "assert callable(roi_editor.load_roi_set)" % SCRIPTS
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          check=True)

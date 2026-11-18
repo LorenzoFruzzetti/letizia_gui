@@ -13,7 +13,7 @@ from qtkit.qt import QtCore, QtWidgets
 
 from ..logic.cohort import (
     ACQUISITION_KEYS, BOOL_COLUMNS, CHANNEL_ORDERS, EDITABLE_RECORDING_COLUMNS, FRAME_ORDERS,
-    MANIFEST_PATH_STYLES, used_recordings,
+    used_recordings,
 )
 from ..logic.conda import display_command
 from ..logic.design import check_design
@@ -26,16 +26,13 @@ from ..logic.steps import (
 from .widgets import FrameModel, ParameterForm, ResultsView, TableEditor, text_of
 
 
-RECTANGLE_PARAMS = "outputs/channel_rectangle/params.json"
-
-
 def rectangle_viewer_arguments(cohort, tables, day: str) -> tuple[list[str], str]:
     """CLI of channel_rectangle_viewer.py for one session, and a note ('' when complete).
 
     The viewer shows every unit x recording it is given and needs a dump for each, so it
     gets the recordings every dumped unit of the day shares; units missing one are left out.
     """
-    pixel_root = cohort.path_of("pixel_root")
+    pixel_root = cohort.layout.pixel_data
     have: dict[str, set[str]] = {}
     for row in used_recordings(tables).itertuples():
         folder = pixel_root / f"{row.day}_{row.animal}" / row.recording
@@ -50,11 +47,10 @@ def rectangle_viewer_arguments(cohort, tables, day: str) -> tuple[list[str], str
     units = sorted(have)
     recordings = sorted(shared, key=lambda name: int(name[1:]))
     left_out = sorted(f"{u}/{r}" for u, rs in have.items() for r in rs - shared)
-    # A cohort has no channel-assignment table: the viewer's manifest column stays unassigned.
-    arguments = ["--day", day, "--units", *units, "--recordings", *recordings,
-                 "--pixel-root", str(pixel_root), "--roi-set-dir", str(cohort.path_of("roi_set_dir")),
-                 "--assignment", "none",
-                 "--params", RECTANGLE_PARAMS]
+    # The viewer takes the dumps, ROI sets and rectangle parameters from the cohort file. A
+    # cohort has no channel-assignment table: the viewer's manifest column stays unassigned.
+    arguments = ["--cohort", str(cohort.path), "--day", day, "--units", *units,
+                 "--recordings", *recordings, "--assignment", "none"]
     note = f"Rectangle viewer: left out (not shared by every unit): {', '.join(left_out)}" if left_out else ""
     return arguments, note
 
@@ -125,19 +121,21 @@ class JobSection(QtWidgets.QGroupBox):
         name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", f"Preset name for {self.job}:")
         if ok and name.strip():
             spec = JOBS[self.job]
-            path = save_preset(self.job, name.strip(), self.controller.state.cohort.overrides(self.job),
-                               script_parameters(spec).file_hash)
+            cohort = self.controller.state.cohort
+            path = save_preset(self.job, name.strip(), cohort.overrides(self.job),
+                               script_parameters(spec).file_hash, cohort.layout.presets)
             self.page.window.notify(f"Preset saved: {path}")
 
     def load_preset(self) -> None:
-        names = list_presets(self.job)
+        root = self.controller.state.cohort.layout.presets
+        names = list_presets(self.job, root)
         if not names:
             QtWidgets.QMessageBox.information(self, "Load preset", f"No presets saved for {self.job} yet.")
             return
         name, ok = QtWidgets.QInputDialog.getItem(self, "Load preset", "Preset:", names, 0, False)
         if not ok:
             return
-        payload = load_preset(self.job, name)
+        payload = load_preset(self.job, name, root)
         current = self.controller.state.cohort.overrides(self.job)
         changes = diff_overrides(current, payload["overrides"])
         warning = hash_warning(payload, script_parameters(JOBS[self.job]).file_hash)
@@ -198,7 +196,7 @@ class StepPage(QtWidgets.QWidget):
 
     def results_folders(self) -> list[Path]:
         cohort = self.controller.state.cohort
-        return [cohort.path_of("output_root")] if cohort else []
+        return [cohort.layout.outputs] if cohort else []
 
     def primary(self) -> None:
         """What Run step (F5) does on this page."""
@@ -268,8 +266,8 @@ class SetupPage(StepPage):
 
 
 # ----------------------------------------------------------------------------- 1 scan
-COHORT_PATH_KEYS = ("raw_root", "link_root", "pixel_root", "output_root", "manifest",
-                    "roi_set_dir", "reviewed_roi_set_dir", "connectivity_root", "stats_root", "design_csv")
+# The only paths of a cohort file; every other location is fixed by the cohort folder.
+COHORT_PATH_KEYS = ("raw_root", "pixel_root")
 
 
 class ScanPage(StepPage):
@@ -284,10 +282,6 @@ class ScanPage(StepPage):
             edit.editingFinished.connect(lambda k=key, e=edit: self._set_path(k, e.text()))
             self.path_edits[key] = edit
             form.addRow(key.replace("_", " "), edit)
-        self.paths_style = QtWidgets.QComboBox()
-        self.paths_style.addItems(list(MANIFEST_PATH_STYLES))
-        self.paths_style.textActivated.connect(lambda t: self.controller.set_cohort_value("manifest_paths", t))
-        form.addRow("manifest paths", self.paths_style)
         self.timepoints = QtWidgets.QLineEdit()
         self.timepoints.setToolTip("Timepoint classes in order, the first is the baseline, e.g. BL, 3D, 15D, 30D")
         self.timepoints.editingFinished.connect(self._set_timepoints)
@@ -338,7 +332,6 @@ class ScanPage(StepPage):
         for key, edit in self.path_edits.items():
             if not edit.hasFocus():
                 edit.setText(str(cohort.data.get(key) or ""))
-        self.paths_style.setCurrentText(cohort.get("manifest_paths"))
         if not self.timepoints.hasFocus():
             self.timepoints.setText(", ".join(cohort.timepoints))
         issues = self.controller.table_issues()
@@ -347,7 +340,7 @@ class ScanPage(StepPage):
 
     def results_folders(self):
         cohort = self.controller.state.cohort
-        return [cohort.path_of("manifest").parent, cohort.table_path("recordings").parent] if cohort else []
+        return [cohort.layout.folder, cohort.layout.tables] if cohort else []
 
 
 # ----------------------------------------------------------------------------- 2 acquisition
@@ -408,7 +401,7 @@ class AcquisitionPage(StepPage):
         self.controller.set_acquisition(self._values(), confirm)
 
     def facts_path(self) -> Path:
-        return self.controller.state.cohort.path_of("output_root") / "acquisition_facts.json"
+        return self.controller.state.cohort.layout.outputs / "acquisition_facts.json"
 
     def _use_suggested(self) -> None:
         if not self.facts_path().exists():
@@ -454,17 +447,12 @@ class AcquisitionPage(StepPage):
 
 # ----------------------------------------------------------------------------- 3 ROIs
 class RoisPage(StepPage):
-    jobs = ("bake", "roi_select", "rebuild", "preflight")
+    jobs = ("bake", "rebuild", "preflight")
 
     def make_sections(self):
         run = self.window.run_job
         return [
             JobSection(self, "bake", [("Bake previews", lambda: run("bake"))]),
-            # The new editor (wfci_gui.roi_editor) is the default.
-            # Both write the same files; the old one (batch_roi_select.py, whose
-            # parameters this section shows) stays available.
-            JobSection(self, "roi_select", [("Open ROI editor", self._new_editor),
-                                            ("Open old ROI editor", lambda: run("roi_select"))]),
             JobSection(self, "rebuild", [("Rebuild this cohort's new sets", self._rebuild)]),
             JobSection(self, "preflight", [("Run pre-flight", lambda: run("preflight"))]),
         ]
@@ -485,6 +473,14 @@ class RoisPage(StepPage):
             "GUI rebuilds only this cohort's new sets (never the whole folder) and runs the pre-flight.")
         note.setWordWrap(True)
         self.settings_layout.addWidget(note)
+        # The editor takes everything from the cohort file, so it has no parameter form.
+        box = QtWidgets.QGroupBox("ROI editor  (python -m wfci_gui.roi_editor)")
+        row = QtWidgets.QHBoxLayout(box)
+        button = QtWidgets.QPushButton("Open ROI editor")
+        button.clicked.connect(lambda checked=False: self._new_editor())
+        row.addWidget(button)
+        row.addStretch()
+        self.settings_layout.addWidget(box)
 
     def primary(self):
         self.window.run_job("preflight")
@@ -515,12 +511,12 @@ class ExtractPage(StepPage):
         state = self.controller.state
         used = used_recordings(state.tables)
         cohort = state.cohort
-        return sum(not (cohort.path_of("output_root") / k / "connectivity_full.npz").exists()
+        return sum(not (cohort.layout.outputs / k / "connectivity_full.npz").exists()
                    for k in used["key"]) if not used.empty else 0
 
     def primary(self):
         cohort = self.controller.state.cohort
-        free = free_gb(cohort.path_of("pixel_root"))
+        free = free_gb(cohort.layout.pixel_data)
         need = needed_dump_gb(self.remaining(), 0)
         if free is not None and free < need:
             answer = QtWidgets.QMessageBox.warning(
@@ -535,12 +531,12 @@ class ExtractPage(StepPage):
         if cohort is None:
             return
         remaining = self.remaining()
-        free = free_gb(cohort.path_of("pixel_root"))
+        free = free_gb(cohort.layout.pixel_data)
         need = needed_dump_gb(remaining, 0)
         ok = free is not None and free >= need
         free_text = f"{free:.0f} GB free" if free is not None else "drive not found"
         self.disk.setText(colored(f"Disk: {remaining} recordings still to extract need about {need:.0f} GB "
-                                  f"in {cohort.path_of('pixel_root')} ({free_text}).", ok)
+                                  f"in {cohort.layout.pixel_data} ({free_text}).", ok)
                           + f"<br>Time: about {remaining * 1.5 / 60:.1f}–{remaining * 4 / 60:.1f} h "
                             "(1.5–4 min per recording).")
 
@@ -659,25 +655,21 @@ class QcPage(StepPage):
     def _traces(self) -> None:
         cohort = self.controller.state.cohort
         self.window.enqueue(self.controller.viewer_job("scripts/plot_channel_traces.py", [
-            "--pixel-root", str(cohort.path_of("pixel_root")),
-            "--batch-summary-csv", str(cohort.path_of("output_root") / "batch_summary.csv"),
+            "--cohort", str(cohort.path),
             "--channel-assignment-csv", "none", "--old-manifest-csv", "none",
-            "--expected-disagreements", "none",
-            "--sampling-rate-hz", str(cohort.acquisition["sampling_rate_hz"])], "QC: channel trace plots"))
+            "--expected-disagreements", "none"], "QC: channel trace plots"))
 
     def _by_animal(self) -> None:
         cohort = self.controller.state.cohort
         self.window.enqueue(self.controller.viewer_job("scripts/plot_channel_traces_by_animal.py", [
-            "--pixel-root", str(cohort.path_of("pixel_root")), "--design-csv", str(design_path(cohort)),
-            "--recordings-from-design", "--exclude-timepoints",
-            "--sampling-rate-hz", str(cohort.acquisition["sampling_rate_hz"])], "QC: traces by animal"))
+            "--cohort", str(cohort.path), "--recordings-from-design", "--exclude-timepoints"],
+            "QC: traces by animal"))
 
     def _inspect(self) -> None:
         cohort = self.controller.state.cohort
         day = self._selected_day()
         self.controller.launch_detached("scripts/inspect_channel_labels.py", [
-            "--pixel-root", str(cohort.path_of("pixel_root")), "--session", str(day),
-            "--sampling-rate-hz", str(cohort.acquisition["sampling_rate_hz"])])
+            "--cohort", str(cohort.path), "--session", str(day)])
 
     def _selected_day(self) -> str:
         index = self.view.currentIndex()
@@ -687,7 +679,7 @@ class QcPage(StepPage):
 
     def _rectangle_viewer(self) -> None:
         """scripts/channel_rectangle_viewer.py on one session: odd | even mean images with
-        the midline rectangle; parameters from outputs/channel_rectangle/params.json."""
+        the midline rectangle; parameters from the cohort's channel_rectangle_params.json."""
         cohort = self.controller.state.cohort
         arguments, note = rectangle_viewer_arguments(cohort, self.controller.state.tables, self._selected_day())
         if not arguments:
@@ -702,7 +694,7 @@ class QcPage(StepPage):
         if cohort is None:
             return
         self._load_table()
-        levels = cohort.path_of("output_root") / "qc_levels_by_session.csv"
+        levels = cohort.layout.outputs / "qc_levels_by_session.csv"
         if levels.exists():
             frame = pd.read_csv(levels, dtype=str, keep_default_na=False)
             rows = "".join("<tr>" + "".join(f"<td>{html.escape(v)}</td>" for v in r) + "</tr>"
@@ -750,7 +742,7 @@ class CachesPage(StepPage):
 
     def results_folders(self):
         cohort = self.controller.state.cohort
-        return [cohort.path_of("output_root") / "logs"] if cohort else []
+        return [cohort.layout.logs] if cohort else []
 
 
 # ----------------------------------------------------------------------------- 7 design
@@ -762,7 +754,7 @@ class DesignPage(StepPage):
         return [design_path(cohort).parent] if cohort else []
 
     def build_tables(self):
-        self.design_view = TableEditor("experimental_design.csv (read only; rebuild it to change it)",
+        self.design_view = TableEditor("design.csv (read only; rebuild it to change it)",
                                        lambda f: None, None, editable=(), can_add_rows=False)
         self.loaded = None
         return self.design_view
@@ -795,11 +787,6 @@ class AnalysisAPage(StepPage):
         self.focus = QtWidgets.QComboBox()
         self.focus.addItems(["SSp", "motor"])
         self.focus.textActivated.connect(lambda t: self._set("focus", t))
-        self.stats_cohort = QtWidgets.QComboBox()
-        self.stats_cohort.addItems(["", "default"])
-        self.stats_cohort.setToolTip("The cohort's entry in connectivity_stats.py. A new cohort has none; "
-                                     "adding one is an edit of that script and needs approval.")
-        self.stats_cohort.textActivated.connect(lambda t: self._set("stats_cohort", t or None))
         self.timepoints = QtWidgets.QListWidget()
         self.animals = QtWidgets.QListWidget()
         self.variants = QtWidgets.QListWidget()
@@ -810,8 +797,6 @@ class AnalysisAPage(StepPage):
         grid.addWidget(self.baseline, 0, 1)
         grid.addWidget(QtWidgets.QLabel("Region focus"), 0, 2)
         grid.addWidget(self.focus, 0, 3)
-        grid.addWidget(QtWidgets.QLabel("Statistics cohort key"), 0, 4)
-        grid.addWidget(self.stats_cohort, 0, 5)
         for column, (label, widget) in enumerate((("Timepoints", self.timepoints), ("Animals", self.animals),
                                                   ("Variants", self.variants))):
             grid.addWidget(QtWidgets.QLabel(label), 1, column * 2)
@@ -856,7 +841,7 @@ class AnalysisAPage(StepPage):
     def available_variants(self) -> list[str]:
         cohort = self.controller.state.cohort
         variants = list(CONNECTIVITY_VARIANTS)
-        pixel_root = cohort.path_of("pixel_root")
+        pixel_root = cohort.layout.pixel_data
         if any(pixel_root.glob("*/*/pixels_median_dff_20s_blpedestal_full.npy")):
             variants += ["pixels_median_dff_20s_blpedestal_full", "pixels_median_dff_20s_blpedestal_full_gsr"]
         return variants
@@ -885,7 +870,6 @@ class AnalysisAPage(StepPage):
         self.baseline.addItems(cohort.timepoints)
         self.baseline.setCurrentText(baseline)
         self.focus.setCurrentText(self._choice().get("focus", "SSp"))
-        self.stats_cohort.setCurrentText(str(self._choice().get("stats_cohort") or ""))
         for widget, options, chosen in ((self.timepoints, cohort.timepoints, timepoints),
                                         (self.animals, sorted(design["animal"].unique()), animals),
                                         (self.variants, self.available_variants(), variants)):
@@ -898,12 +882,7 @@ class AnalysisAPage(StepPage):
         self._updating = False
         result = self.design_check()
         self.check.setText(colored(html.escape(result.message), result.complete))
-        ready = result.complete and bool(variants) and bool(self._choice().get("stats_cohort"))
-        self.run_all.setEnabled(ready)
-        if result.complete and not self._choice().get("stats_cohort"):
-            self.check.setText(self.check.text() + "<br>" + colored(
-                "No statistics cohort key: the statistics script has no entry for this cohort (needs an approved "
-                "edit). Connectivity can still run on its own.", None))
+        self.run_all.setEnabled(result.complete and bool(variants))
         for section in self.sections:
             section.preview_variant = variants[0] if variants else None
 
@@ -927,7 +906,7 @@ class AnalysisAPage(StepPage):
 
     def results_folders(self):
         cohort = self.controller.state.cohort
-        return [cohort.path_of("connectivity_root"), cohort.path_of("stats_root")] if cohort else []
+        return [cohort.layout.connectivity, cohort.layout.connectivity_stats] if cohort else []
 
 
 PAGE_CLASSES = {

@@ -34,9 +34,12 @@ Output, next to each dump (window and tag in the name, so it never mixes):
     pixels_median_dff_<window>s_blpedestal_full.npy   float16, (n_time, rows, cols)
     pixels_median_dff_<window>s_blpedestal_meta.json  written LAST = done-marker
 
-Example (wfci_gui env):
-    python cache_median_dff_baseline_pedestal.py
-    python cache_median_dff_baseline_pedestal.py --workers 1 --recording-limit 2
+Inputs from the cohort file (``--cohort``): its pixel dumps, its design.csv (timepoint per
+recording), its frame rate, and its first timepoint as the default baseline.
+
+Example (wfci_gui env; C is <cohort folder>/cohort.yaml):
+    python cache_median_dff_baseline_pedestal.py --cohort C
+    python cache_median_dff_baseline_pedestal.py --cohort C --workers 1 --recording-limit 2
 """
 
 from __future__ import annotations
@@ -60,16 +63,17 @@ from cache_median_dff import median_dff_volume
 from pixel_helpers import crop_slices, median_window_frames
 from roi_pixel_connectivity import read_meta, recording_boxes
 
-REPO_ROOT = Path(__file__).resolve().parent
-
 # Edit this section to run the cache build without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data",  # <date>_<animal>/<t#>/pixels_f_gcamp_full.npy
-    "design_csv": REPO_ROOT / "pixel_data" / "experimental_design.csv",  # timepoint per recording
-    "baseline_timepoint": "BL",  # Its recordings define each animal's reference pedestal.
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps
+    # (<date>_<animal>/<t#>/pixels_f_gcamp_full.npy), its design.csv (timepoint per
+    # recording) and its frame rate (the same as the uncorrected cache, so only the
+    # pedestal differs).
+    "cohort_file": None,
+    # Its recordings define each animal's reference pedestal; None = the cohort's first timepoint.
+    "baseline_timepoint": None,
     "offset_smoothing_px": 2.0,  # Gaussian sigma of the pedestal maps, crop pixels; 0 = exact per pixel.
     "window_s": 20.0,  # Same running-median window as the uncorrected cache (201 frames at 10 Hz).
-    "sampling_rate_hz": 10.0,  # Same as the uncorrected cache, so only the pedestal differs.
     "tag": "blpedestal",  # File-name tag of this variant.
     # Channel(s) whose pedestal is put back to BL: "gcamp", "emo" or "both".
     "pedestal_channels": "gcamp",
@@ -188,12 +192,12 @@ def build_one(job: dict[str, Any]) -> dict[str, Any]:
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pixel-root", type=Path, default=defaults["pixel_root"])
-    parser.add_argument("--design-csv", type=Path, default=defaults["design_csv"])
-    parser.add_argument("--baseline-timepoint", default=defaults["baseline_timepoint"])
+    parser.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                        help="The cohort file, <cohort folder>/cohort.yaml")
+    parser.add_argument("--baseline-timepoint", default=defaults["baseline_timepoint"],
+                        help="Default: the cohort's first timepoint")
     parser.add_argument("--offset-smoothing-px", type=float, default=defaults["offset_smoothing_px"])
     parser.add_argument("--window-s", type=float, default=defaults["window_s"])
-    parser.add_argument("--sampling-rate-hz", type=float, default=defaults["sampling_rate_hz"])
     parser.add_argument("--tag", default=defaults["tag"])
     parser.add_argument("--pedestal-channels", choices=sorted(CHANNEL_CHOICES), default=defaults["pedestal_channels"])
     # "none": no verdict file.
@@ -208,8 +212,18 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+    # The dumps, the design table, the frame rate and the default baseline come from the cohort file.
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.design_csv = cohort.layout.design_csv
+    args.sampling_rate_hz = float(acquisition_value(cohort, "sampling_rate_hz"))
+    if args.baseline_timepoint is None:
+        args.baseline_timepoint = cohort.timepoints[0]
+    return args
 
 
 def main():

@@ -1,7 +1,8 @@
 """Batch resting-state FC over a cohort manifest, per recording.
 
 This is a *study script* (dataset policy lives here, mechanism lives
-in ``wfci``). It reads the manifest produced by ``scan_cohort.py`` and, for
+in ``wfci``). Everything about the cohort comes from its cohort file (``--cohort``,
+``cohort_settings``): it reads the cohort's ``manifest.csv`` produced by ``scan_cohort.py`` and, for
 each (day, animal) row, runs a cerebellar resting-state connectivity analysis over
 that animal's ``t1..tn`` interleaved recordings.
 
@@ -22,7 +23,7 @@ one correlation over the whole concatenation. Note this is concatenation, not
 trial-averaging: averaging the blocks' correlation matrices would be right only if
 they were separate acquisitions.
 
-Per (day, animal) it writes, under ``<output_root>\\<day>_<animal>\\`` -- and, in
+Per (day, animal) it writes, under ``<cohort folder>\\outputs\\<day>_<animal>\\`` (``output_root``) -- and, in
 the default separate mode, under a further ``<t#>\\`` subfolder per recording:
     * connectivity[_debug].npz  -- temp_roi, R, R_mean, averaged_traces, labels,
                                    the recording path(s), Bregma, profile.
@@ -33,7 +34,7 @@ the default separate mode, under a further ``<t#>\\`` subfolder per recording:
     * roi_traces[_debug].png    -- trial-averaged ROI traces.
     * roi_overlay_debug.png     -- ROI placement (debug/in-memory mode only).
 ``save_data`` is ON in RUN_CONFIG, so it also writes, under
-``<save_data_root>`` the
+``<cohort folder>\\pixel_data`` (``save_data_root``; the cohort file's ``pixel_root`` moves it) the
 PER-PIXEL volumes the ROI means are reduced from:
     * pixels_dff_*.npy          -- corrected dF/F per pixel, [time, y, x], float16.
     * pixels_f_gcamp_*.npy      -- raw GCaMP fluorescence per pixel, float32.
@@ -46,7 +47,7 @@ estimate will not fit the disk. Pass ``--no-save-data`` to skip them. The
 volumes are written as the recording streams, so they cost no extra pass and no
 extra time, and the ROI traces are unchanged.
 One summary row per recording (or per unit when merging) is appended to
-``<output_root>\\batch_summary.csv``, flushed as each job lands.
+``outputs\\batch_summary.csv``, flushed as each job lands.
 
 EXECUTION. The supported default is ``workers=1``: every recording runs in the
 main process, avoiding the native Windows DLL failures observed only in spawned
@@ -71,30 +72,29 @@ Two modes:
       recording is ~3 GB and a full unit ~15 GB across 5, so streaming is
       mandatory. No overlay.
 
-ROI geometry: each unit uses its profile's atlas and the manifest's Bregma unless a
-ROI set drawn with ``roi_editor.py`` is configured -- ``roi_set_dir`` for per-unit
-files (``<day>_<animal>.yaml``) or ``roi_set`` for one file shared by every unit.
+ROI geometry: each recording uses its own rebuilt set from the cohort's
+``roi_sets\\rebuilt`` (``<day>_<animal>_<t#>.yaml``, else ``<day>_<animal>.yaml``), else
+``roi_set`` (one file shared by every unit), else its profile's atlas and the manifest's Bregma.
 
 Row selection:
     * ``select`` -- list of "day/animal" keys to run (e.g. ["200101/A1"]).
       Empty list = every row in the manifest.
     * ``max_rows`` -- cap the number of rows actually run (after ``select``).
 
-Run it -- RUN_CONFIG below is already set up for the reliable real run (every unit
-in the manifest, full streaming, the per-recording ROI sets in roi_sets\\rebuilt,
-serial execution, per-pixel dumps into pixel_data\\), so with no flags at all
-this does the whole batch:
+Run it -- RUN_CONFIG below is set up for the reliable real run (every unit in the
+manifest, full streaming, serial execution, per-pixel dumps), so with only the cohort
+file this does the whole batch (C is <cohort folder>\\cohort.yaml):
 
-    conda run -n wfci_gui python extract_cohort.py                  # editor mode, uses RUN_CONFIG
-    conda run -n wfci_gui python extract_cohort.py --workers 1      # explicit reliable default
-    conda run -n wfci_gui python extract_cohort.py --workers 2      # experimental on Windows
-    conda run -n wfci_gui python extract_cohort.py --select 200101/A1 200101/A2
-    conda run -n wfci_gui python extract_cohort.py --debug          # fast smoke test
-    conda run -n wfci_gui python extract_cohort.py --no-skip-existing   # recompute everything
-    conda run -n wfci_gui python extract_cohort.py --no-save-data       # ROI means only, no pixel volumes
-    conda run -n wfci_gui python extract_cohort.py --merge-recordings   # one concatenated trial per animal
+    conda run -n wfci_gui python extract_cohort.py --cohort C                 # the whole batch
+    conda run -n wfci_gui python extract_cohort.py --cohort C --workers 2     # experimental on Windows
+    conda run -n wfci_gui python extract_cohort.py --cohort C --select 200101/A1 200101/A2
+    conda run -n wfci_gui python extract_cohort.py --cohort C --debug         # fast smoke test
+    conda run -n wfci_gui python extract_cohort.py --cohort C --no-skip-existing   # recompute everything
+    conda run -n wfci_gui python extract_cohort.py --cohort C --no-save-data       # ROI means only
+    conda run -n wfci_gui python extract_cohort.py --cohort C --merge-recordings   # one trial per animal
 
-Edit ``RUN_CONFIG`` and run -- no CLI flags needed. Errors are left to surface.
+Or set ``RUN_CONFIG["cohort_file"]`` and run with no flags. Without a cohort file the run
+stops with "set cohort_file or pass --cohort". Errors are left to surface.
 """
 
 from __future__ import annotations
@@ -138,6 +138,7 @@ from wfci.streaming import channel_choice_meta, choose_block_channels, roi_union
 
 # Reuse the single-folder helpers instead of duplicating them; importing
 # recording_helpers is inert (it has no ``__main__`` block).
+from channel_rectangle import read_roi_set_channel_order
 from roi_editor import load_roi_set
 from recording_helpers import (
     _load_limited_trial,
@@ -159,6 +160,9 @@ SUMMARY_FIELDS = [
     # not_interleaved recording stored as odd/even; "skipped" when one was not stored.
     # Blank on rows written before the single-read channel selection existed.
     'channel_verdict', 'status',
+    # channel_order_source: where each recording's configured order came from --
+    # "roi_set" (the order chosen in the ROI editor) or "manifest" (;-joined when merged).
+    'channel_order_source',
 ]
 
 # Returned by _run_trial for a recording stored by position, with no analysis.
@@ -176,36 +180,28 @@ POOL_HEARTBEAT_SECONDS = 15.0
 # Edit this section to run without CLI flags.
 # ---------------------------------------------------------------------------
 RUN_CONFIG: dict[str, Any] = {
-    # Manifest written by scan_cohort.py.
-    "manifest": r"manifest.csv",
-    # Root under which per-unit output folders are created.
-    "output_root": r"outputs",
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort). Everything about
+    # the cohort comes from it (cohort_settings): the manifest (manifest.csv, written by
+    # scan_cohort.py), the per-recording ROI sets (roi_sets/rebuilt), the outputs
+    # (outputs/<day>_<animal>/...), the pixel dumps (pixel_data/, or the cohort file's
+    # pixel_root) and the raw-frame settings (its acquisition facts).
+    "cohort_file": None,
     # Which units to run: "day/animal" keys. Empty list = all rows in the manifest.
     "select": [],
     # Cap on rows actually run after `select` (None = no cap). Handy for a quick test.
     "max_rows": None,
-    # ROI geometry (boxes + Bregma) drawn with roi_editor.py. Two ways to use it:
-    #   * roi_set_dir -- per-unit files, <roi_set_dir>\<day>_<animal>.yaml. Each
-    #     animal gets its own ROIs/Bregma. A unit with no file falls back to
-    #     roi_set, and if that is None too, to the profile atlas + the manifest's
-    #     Bregma. This is the "check every session" workflow.
-    #   * roi_set     -- ONE file used for every unit ("the same ROIs for all
-    #     sessions"), e.g. r"roi_sets\shared_roi_set.yaml".
-    # Set both to None to keep the previous behaviour exactly.
-    # roi_set is the 22-box cortical layout (wfci.atlases.CORTEX_22 -- the MATLAB's
-    # img_av(y_1+.., x_2+..) boxes), shared by every unit. Only the ATLAS is
-    # replaced: the manifest's profile column stays cerebellar_rs, so the pipeline
-    # chain (trim, no mask, no GSR) is unchanged -- just 22 ROIs instead of 4.
-    # Each file's own Bregma wins over the manifest's, so once you have drawn
-    # per-animal sets with roi_editor.py, set roi_set_dir = r"roi_sets" and those
-    # take precedence over this shared file.
-    # roi_sets\rebuilt holds ONE file PER RECORDING, <day>_<animal>_<t#>.yaml (one
-    # for every recording in the manifest), regenerated by
-    # rebuild_roi_sets.py as a pure mirror-exact rescale of the cortex22 baseline.
-    # resolve_roi_set() picks the per-recording file first, so each t# is analysed
-    # with the boxes and Bregma drawn for it. cortex22 stays as the fallback for a
-    # recording with no file.
-    "roi_set_dir": r"roi_sets\rebuilt",
+    # ROI geometry (boxes + Bregma). The cohort's roi_sets\rebuilt (roi_set_dir, from
+    # the cohort) holds ONE file PER RECORDING, <day>_<animal>_<t#>.yaml, regenerated
+    # by rebuild_roi_sets.py as a pure mirror-exact rescale of the cortex22 baseline.
+    # resolve_roi_set() picks the per-recording file first (then <day>_<animal>.yaml),
+    # so each t# is analysed with the boxes and Bregma drawn for it; each file's own
+    # Bregma wins over the manifest's.
+    # roi_set is the fallback for a recording with no file: ONE set for every unit,
+    # here the 22-box cortical layout (wfci.atlases.CORTEX_22 -- the MATLAB's
+    # img_av(y_1+.., x_2+..) boxes). Only the ATLAS is replaced: the manifest's
+    # profile column stays cerebellar_rs, so the pipeline chain (trim, no mask, no
+    # GSR) is unchanged -- just 22 ROIs instead of 4. None: the profile's atlas and
+    # the manifest's Bregma.
     "roi_set": r"atlas\cortex22_roi_set.yaml",
     # How the animal's t1..tn recordings are treated:
     #   False (default) -- each t# subfolder is its own analysis, with its own
@@ -240,10 +236,9 @@ RUN_CONFIG: dict[str, Any] = {
     # save_data_window; the run refuses to start if that will not fit. False keeps the pipeline as it was:
     # only the 22 ROI means survive each frame.
     "save_data": True,
-    # Where the volumes go. None puts them beside the .npz in the analysis output
-    # folder. A path mirrors the same <day>_<animal>\<t#>\ tree under it, which is
-    # what you want when the pixels are far larger than the rest of the outputs.
-    "save_data_root": r"pixel_data",
+    # Where the volumes go: the cohort's pixel_data\ (or its pixel_root), mirroring the
+    # outputs' <day>_<animal>\<t#>\ tree, since the pixels are far larger than the rest
+    # of the outputs (save_data_root, from the cohort).
     # Crop, as (row_start, row_end, col_start, col_end) offsets RELATIVE TO BREGMA
     # on the final 128x128 grid -- the same coordinate system the ROI boxes use.
     # (-29, 47, -44, 43) is the default Bregma-relative dump window, 76x87, which
@@ -260,24 +255,16 @@ RUN_CONFIG: dict[str, Any] = {
     # than writing inf if you try.
     "save_data_dff_dtype": "float16",
     "save_data_f_dtype": "float32",
-    # --- raw-frame handling, set from the cohort's acquisition facts ------
-    # Raw image glob inside each t# folder (some cameras write .tiff).
-    "pattern": "*.tif",
-    # Quarter turns applied to every frame right after decoding (np.rot90 sign,
-    # -1 = clockwise). MUST equal the rotation the ROI sets were drawn on
-    # (the cohort's acquisition.rot90_k), or every box lands on the wrong anatomy.
-    # A camera mounted at 90 degrees needs -1; otherwise 0.
-    "rot90_k": 0,
-    # How acquisition order is read off the raw file names (wfci.io.sorted_frame_files).
-    # "name" = lexicographic, right for zero-padded indices.
-    # "number" = by the trailing integer: for files named ..._1.tif,
-    # ..._2.tif, ..., ..._10.tif a name sort would mix the two channels. MUST
-    # equal the order the ROI previews were built with.
-    "frame_order": "name",
-    # Onset frames dropped per channel. None = the profile's own trim (20 frames,
-    # 2 s at 10 Hz per channel). A cohort at another rate sets the same DURATION
-    # in frames, e.g. 50 at 25 Hz.
-    "trim_frames": None,
+    # --- raw-frame handling: from the cohort's acquisition facts (cohort_settings) ---
+    #   pattern      acquisition.file_glob: raw image glob inside each t# folder.
+    #   rot90_k      acquisition.rot90_k: quarter turns applied to every frame right
+    #                after decoding (np.rot90 sign, -1 = clockwise); the rotation the
+    #                ROI sets were drawn on, or every box lands on the wrong anatomy.
+    #   frame_order  acquisition.frame_order: "name" (lexicographic, zero-padded
+    #                indices) or "number" (by the trailing integer: for ..._1.tif ...
+    #                ..._10.tif a name sort would mix the two channels).
+    #   trim_frames  acquisition.trim_s x sampling_rate_hz: onset frames dropped per
+    #                channel (the same DURATION at any rate, e.g. 2 s = 50 frames at 25 Hz).
     # --- single-read channel selection ---------------------------
     # Every t# is read from disk ONCE: both interleaved groups are buffered
     # unlabelled, "auto" decides which is GCaMP from every frame, then the usual
@@ -313,6 +300,9 @@ RUN_CONFIG: dict[str, Any] = {
     # dimmer-is-GCaMP rule was validated on) or "roi_union" (only under this
     # recording's own ROI boxes). See wfci.io.ChannelDecisionConfig.level_region.
     "channel_level_region": "frame",
+    # True: print each recording's channel order and its source, and the disk
+    # estimate, then stop before anything is written.
+    "dry_run": False,
     "prefer_cli_args": True,
 }
 
@@ -320,16 +310,15 @@ RUN_CONFIG: dict[str, Any] = {
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     """Minimal CLI overrides for the knobs worth flipping from the terminal."""
     p = argparse.ArgumentParser(description="Batch RS-FC over a cohort manifest.")
-    p.add_argument("--manifest", default=defaults["manifest"], help="Manifest CSV.")
-    p.add_argument("--output-root", default=defaults["output_root"])
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--select", nargs="*", default=defaults["select"],
                    metavar="DAY/ANIMAL[/T#]",
                    help="Units to run; omit for all. DAY/ANIMAL/T# picks a one-recording row.")
     p.add_argument("--max-rows", type=int, default=defaults["max_rows"])
-    p.add_argument("--roi-set-dir", default=defaults["roi_set_dir"], metavar="DIR",
-                   help="Per-unit ROI sets: DIR\\<day>_<animal>.yaml (roi_editor.py).")
     p.add_argument("--roi-set", default=defaults["roi_set"], metavar="PATH",
-                   help="One ROI set for every unit (fallback when --roi-set-dir has no file).")
+                   help="One ROI set for every unit (fallback when the cohort's roi_sets/rebuilt "
+                        "has no file).")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--full", dest="debug", action="store_false", default=defaults["debug"],
                       help="Full streaming run over every frame of every recording.")
@@ -354,12 +343,6 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
                    default=defaults["save_data"],
                    help="Also write the per-pixel dF/F and raw-F volumes "
                         "(about 200 MB per recording).")
-    p.add_argument("--save-data-root", default=defaults["save_data_root"],
-                   metavar="DIR",
-                   help="Root for the per-pixel volumes. Default: beside the .npz. "
-                        r"The <day>_<animal>\<t#> tree is mirrored under it, so this "
-                        "is how you put ~70 GB of pixels on a different disk from "
-                        "the analysis outputs.")
     p.add_argument("--save-data-dff-dtype", default=defaults["save_data_dff_dtype"],
                    choices=DUMP_DTYPES, metavar="DTYPE",
                    help=f"On-disk dtype for the dF/F volume {DUMP_DTYPES}. "
@@ -372,18 +355,6 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
                         f"halves them but leaves little headroom below a bright "
                         f"pixel and quantises F in steps of 32 counts at the bright "
                         f"end.")
-    p.add_argument("--pattern", default=defaults["pattern"],
-                   help="Raw image glob in each t# folder (e.g. *.tiff).")
-    p.add_argument("--rot90-k", dest="rot90_k", type=int, default=defaults["rot90_k"],
-                   help="Quarter turns per frame (np.rot90; -1 = clockwise). Must match "
-                        "the rotation the ROI sets were drawn on.")
-    p.add_argument("--frame-order", choices=["name", "number"],
-                   default=defaults["frame_order"],
-                   help="Order raw files by name (zero-padded indices) or by their "
-                        "trailing number (indices not zero-padded).")
-    p.add_argument("--trim-frames", type=int, default=defaults["trim_frames"],
-                   metavar="N", help="Onset frames dropped per channel "
-                                     "(default: the profile's trim).")
     p.add_argument("--channel-buffer", choices=BUFFER_MODES,
                    default=defaults["channel_buffer"],
                    help="Where the single-read channel buffer lives (auto/ram/disk/none).")
@@ -404,6 +375,9 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p.add_argument("--channel-level-region", choices=LEVEL_REGIONS,
                    default=defaults["channel_level_region"],
                    help="Pixels the channel levels are taken over: whole frame or ROI union.")
+    p.add_argument("--dry-run", action="store_true", default=defaults["dry_run"],
+                   help="Print each recording's channel order and its source, and the disk "
+                        "estimate, then stop before anything is written.")
     ns = p.parse_args()
     # Not a flag: changing the window changes which pixels the array even contains,
     # so it belongs in RUN_CONFIG next to the comment that explains it.
@@ -411,17 +385,54 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     return ns
 
 
+def cohort_settings(cohort_file: str | None) -> dict[str, Any]:
+    """Everything the batch takes from the cohort file: folders and raw-frame settings.
+
+    Raises "set cohort_file or pass --cohort" when there is no cohort file, and names
+    the acquisition fact step 2 has not filled yet.
+    """
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort, trim_frames
+    cohort = load_script_cohort(cohort_file)
+    layout = cohort.layout
+    acquisition = {key: acquisition_value(cohort, key)
+                   for key in ("file_glob", "rot90_k", "frame_order", "trim_s", "sampling_rate_hz")}
+    return dict(
+        cohort_file=str(cohort.path),
+        manifest=str(layout.manifest),
+        output_root=str(layout.outputs),
+        roi_set_dir=str(layout.rebuilt_roi_sets),
+        save_data_root=str(layout.pixel_data),
+        pattern=acquisition["file_glob"],
+        rot90_k=int(acquisition["rot90_k"]),
+        frame_order=acquisition["frame_order"],
+        trim_frames=trim_frames(acquisition),
+    )
+
+
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
-    """Prefer CLI args when any are given, else fall back to RUN_CONFIG (editor mode)."""
+    """Prefer CLI args when any are given, else fall back to RUN_CONFIG (editor mode);
+    then add what comes from the cohort file (``cohort_settings``)."""
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
+        args = parse_args(defaults=config)
+    else:
+        args = _config_namespace(config)
+    for name, value in cohort_settings(args.cohort_file).items():
+        setattr(args, name, value)
+    # A relative fallback ROI set (the default atlas) is relative to the code folder,
+    # not to the folder the job runs in.
+    if args.roi_set and not os.path.isabs(args.roi_set):
+        args.roi_set = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                    args.roi_set)
+    return args
+
+
+def _config_namespace(config: dict[str, Any]) -> argparse.Namespace:
+    """RUN_CONFIG as the namespace parse_args would give (editor mode)."""
     return argparse.Namespace(
-        manifest=config["manifest"],
-        output_root=config["output_root"],
+        cohort_file=config["cohort_file"],
         select=list(config["select"]),
         max_rows=config["max_rows"],
-        roi_set_dir=config["roi_set_dir"],
         roi_set=config["roi_set"],
         debug=bool(config["debug"]),
         debug_frames=config["debug_max_frames"],
@@ -430,14 +441,9 @@ def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespa
         workers=config["workers"],
         skip_existing=bool(config["skip_existing"]),
         save_data=bool(config["save_data"]),
-        save_data_root=config["save_data_root"],
         save_data_window=config["save_data_window"],
         save_data_dff_dtype=config["save_data_dff_dtype"],
         save_data_f_dtype=config["save_data_f_dtype"],
-        pattern=config["pattern"],
-        rot90_k=int(config["rot90_k"]),
-        frame_order=config["frame_order"],
-        trim_frames=config["trim_frames"],
         channel_buffer=config["channel_buffer"],
         buffer_dir=config["buffer_dir"],
         keep_channel_buffer=bool(config["keep_channel_buffer"]),
@@ -447,6 +453,7 @@ def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespa
         top_percent=float(config["top_percent"]),
         level_statistic=config["level_statistic"],
         channel_level_region=config["channel_level_region"],
+        dry_run=bool(config["dry_run"]),
     )
 
 
@@ -997,13 +1004,31 @@ def _job_is_complete(job: dict[str, Any], args: argparse.Namespace) -> bool:
     ``PixelDump.close`` writes it last, so its presence means the volumes were
     finished rather than interrupted halfway.
     """
-    if not os.path.isfile(os.path.join(job["out_dir"], _npz_name(args))):
+    npz_path = os.path.join(job["out_dir"], _npz_name(args))
+    if not os.path.isfile(npz_path):
+        return False
+    if _order_changed(job, npz_path):
         return False
     if not getattr(args, "save_data", False):
         return True
     suffix = "debug" if args.debug else "full"
     return os.path.isfile(os.path.join(_dump_dir(job["out_dir"], args),
                                        f"pixels_meta_{suffix}.npz"))
+
+
+def _order_changed(job: dict[str, Any], npz_path: str) -> bool:
+    """True when a recording's ROI set now chooses a channel order other than the one
+    its existing outputs were extracted with (so a resume extracts it again)."""
+    sources = job.get("channel_order_sources", ())     # none = every order from the manifest
+    if "roi_set" not in sources:
+        return False
+    with np.load(npz_path, allow_pickle=False) as result:
+        applied = (str(result["channel_order"].item()).split(";")
+                   if "channel_order" in result.files else [])
+    if len(applied) != len(sources):
+        return True
+    return any(source == "roi_set" and order != done
+               for source, order, done in zip(sources, job["channel_orders"], applied))
 
 
 def _summary_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -1040,6 +1065,8 @@ def _summary_from_npz(job: dict[str, Any]) -> dict[str, Any]:
             npz_path=npz_path,
             channel_verdict=(str(result['channel_verdict'].item())
                              if 'channel_verdict' in result.files else ''),
+            channel_order_source=(str(result['channel_order_source'].item())
+                                  if 'channel_order_source' in result.files else ''),
             status='done',
         )
 
@@ -1078,6 +1105,21 @@ def recording_channel_orders(row: dict[str, str]) -> list[str]:
     return orders
 
 
+def recording_order(row: dict[str, str], args: argparse.Namespace, rec_name: str,
+                    manifest_order: str) -> tuple[str, str]:
+    """``(channel order, source)`` of one recording.
+
+    The ROI set the extraction resolves for this recording (the file that gives its
+    boxes and Bregma) may hold ``channel_order``, the GCaMP parity chosen in the ROI
+    editor. When it does, that value replaces the manifest's (source ``roi_set``);
+    otherwise the manifest's applies (source ``manifest``). A value other than
+    gcamp_first / emo_first raises.
+    """
+    roi_set = _quiet_roi_set(row, args, rec_name)
+    chosen = read_roi_set_channel_order(roi_set) if roi_set else None
+    return (chosen, "roi_set") if chosen is not None else (manifest_order, "manifest")
+
+
 def build_jobs(chosen: list[dict[str, str]],
                args: argparse.Namespace) -> list[dict[str, Any]]:
     """Flatten the selected manifest rows into independent units of work.
@@ -1097,19 +1139,37 @@ def build_jobs(chosen: list[dict[str, str]],
         used = rec_paths if args.max_recordings is None else rec_paths[:args.max_recordings]
         orders = orders[:len(used)]
         rec_names = [os.path.basename(p.rstrip("\\/")) or "recording" for p in used]
+        # The ROI editor's choice replaces the manifest's order, recording by recording
+        # (in both modes).
+        resolved = [recording_order(row, args, rec_name, order)
+                    for rec_name, order in zip(rec_names, orders)]
+        orders = [order for order, _ in resolved]
+        sources = [source for _, source in resolved]
         unit_dir = os.path.join(args.output_root, f"{row['day']}_{row['animal']}")
         if args.merge_recordings:
             jobs.append(dict(row=row, args=args, folders=used, rec_names=rec_names,
-                             channel_orders=orders, label="merged", out_dir=unit_dir))
+                             channel_orders=orders, channel_order_sources=sources,
+                             label="merged", out_dir=unit_dir))
         else:
             # Each recording keeps its own identity in the output tree: the t#
             # folder name becomes a subfolder, so t1 and t2 never overwrite.
-            for folder, rec_name, order in zip(used, rec_names, orders):
+            for folder, rec_name, order, source in zip(used, rec_names, orders, sources):
                 jobs.append(dict(row=row, args=args, folders=[folder],
                                  rec_names=[rec_name], channel_orders=[order],
-                                 label=rec_name,
+                                 channel_order_sources=[source], label=rec_name,
                                  out_dir=os.path.join(unit_dir, rec_name)))
     return jobs
+
+
+def channel_order_plan(jobs: list[dict[str, Any]]) -> list[str]:
+    """One line per recording: the channel order the run will apply and its source."""
+    lines = []
+    for job in jobs:
+        row = job["row"]
+        for rec_name, order, source in zip(job["rec_names"], job["channel_orders"],
+                                           job["channel_order_sources"]):
+            lines.append(f"  {row['day']}/{row['animal']}/{rec_name}: {order} (from {source})")
+    return lines
 
 
 def execute_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -1135,11 +1195,13 @@ def execute_job(job: dict[str, Any]) -> dict[str, Any]:
     # Per-recording channel order as configured (recording_channel_orders). An
     # "auto" is decided by _run_trial from EVERY frame of the block, while the block
     # is read once; the applied order, verdict and statistics land in meta there.
-    configured = job.get("channel_orders") or recording_channel_orders(row)[:len(folders)]
+    configured = job["channel_orders"]
+    order_source = ";".join(job["channel_order_sources"])
     meta = dict(day=day, animal=animal, group=row["group"],
                 bregma=[b_row, b_col], roi_set=roi_set or "",
                 rot90_k=rot90_k, pattern=pattern, frame_order=_frame_order(args),
-                trim=profile.trim, channel_order_configured=";".join(configured))
+                trim=profile.trim, channel_order_configured=";".join(configured),
+                channel_order_source=order_source)
     if merged:
         meta["merged_recordings"] = folders
     else:
@@ -1158,6 +1220,7 @@ def execute_job(job: dict[str, Any]) -> dict[str, Any]:
                    mode="debug" if args.debug else "full",
                    recording=job["label"], n_recordings=len(folders),
                    channel_verdict=meta["channel_verdict"],
+                   channel_order_source=order_source,
                    elapsed_s=round(elapsed, 1))
     if result is NEEDS_CHANNEL_DECISION:
         print("Result : stored as odd/even frames -- channels to be decided")
@@ -1244,7 +1307,11 @@ def _check_dump_space(jobs: list[dict[str, Any]], args: argparse.Namespace) -> N
     if not getattr(args, "save_data", False):
         return
     root = args.save_data_root or args.output_root
-    os.makedirs(root, exist_ok=True)
+    if not getattr(args, "dry_run", False):
+        os.makedirs(root, exist_ok=True)
+    probe = root            # a dry run writes nothing: ask the nearest existing folder
+    while not os.path.isdir(probe):
+        probe = os.path.dirname(probe)
 
     bytes_per_px = (np.dtype(args.save_data_dff_dtype).itemsize
                     + 2 * np.dtype(args.save_data_f_dtype).itemsize)
@@ -1270,7 +1337,7 @@ def _check_dump_space(jobs: list[dict[str, Any]], args: argparse.Namespace) -> N
             n_time = max(0, per_rec - profile.trim) * len(job["folders"])
         total += n_time * bytes_per_frame
 
-    free = shutil.disk_usage(root).free
+    free = shutil.disk_usage(probe).free
     gb = 1024**3
     print(f"save_data: ~{total / gb:.1f} GB for {len(jobs)} job(s) into {root} "
           f"({free / gb:.1f} GB free)")
@@ -1280,7 +1347,7 @@ def _check_dump_space(jobs: list[dict[str, Any]], args: argparse.Namespace) -> N
             f"{DUMP_HEADROOM_BYTES / gb:.0f} GB headroom, but only "
             f"{free / gb:.1f} GB is free on {root}. Refusing to start rather than "
             f"filling the disk partway through. Narrow the run (--select, "
-            f"--max-rows, --max-recordings) or point --save-data-root at a larger "
+            f"--max-rows, --max-recordings) or point the cohort file's pixel_root at a larger "
             f"disk."
         )
 
@@ -1297,6 +1364,13 @@ def main() -> None:
     print(f"Mode     : {'DEBUG' if args.debug else 'FULL streaming'}")
     print("Recs     : " + ("merged into one trial per animal" if args.merge_recordings
                            else "kept separate (one analysis per t#)"))
+    print("Channel order per recording (roi_set = chosen in the ROI editor):")
+    for line in channel_order_plan(all_jobs):
+        print(line)
+    if getattr(args, "dry_run", False):
+        _check_dump_space(all_jobs, args)
+        print("Dry run  : nothing was written.")
+        return
 
     os.makedirs(args.output_root, exist_ok=True)
     summary_csv = os.path.join(args.output_root, "batch_summary.csv")

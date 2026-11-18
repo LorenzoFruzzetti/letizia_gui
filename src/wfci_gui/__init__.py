@@ -11,4 +11,7 @@ The GUI never imports the analysis code (``wfci`` or the study scripts) into its
 process: every step runs as a ``conda run`` subprocess.
 """
 
-__version__ = "0.1.0"
+# The one place the application version is defined. A cohort file records the version
+# that last saved it (``app_version``); the GUI refuses a file saved by a newer one.
+APP_VERSION = "0.1.0"
+__version__ = APP_VERSION

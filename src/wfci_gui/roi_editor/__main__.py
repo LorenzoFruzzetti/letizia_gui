@@ -1,16 +1,17 @@
-"""ROI editor: ``python -m wfci_gui.roi_editor [--cohort cohorts/<name>.yaml]``.
+"""ROI editor: ``python -m wfci_gui.roi_editor [--cohort <workspace>/<cohort>/cohort.yaml]``.
 
-Run from the repository root (the VS Code launch configs "ROI editor (wfci_gui.roi_editor)"
-and "ROI editor (empty)" do). With no argument the window opens EMPTY and data is loaded
+The main GUI's step 3 starts it with ``--cohort`` in the cohort folder. Started from
+inside the code folder (the VS Code launch configurations) it moves to the workspace
+first, so relative ROI-set folders never land in the code folder. With no argument the window opens EMPTY and data is loaded
 from File > Open cohort… / Open manifest… / Recent. With
 ``--cohort`` the cohort's pages open at once, as the main GUI's step 3 passes it; with
-``--manifest`` a manifest's (its settings from the cohort that names it, else from the
-flags below); with ``--folder`` every recording folder under those roots. Any flag below
+``--manifest`` a manifest's (its settings from the ``cohort.yaml`` in its folder, else
+from the flags below); with ``--folder`` every recording folder under those roots. Any flag below
 overrides the cohort's value.
 
 Reads: the recording folders (the first ``frames_per_parity`` odd and even frames, when a
 page is first opened), ``<roi_set_dir>/alignment_images`` (cached odd / even images), the
-ROI sets in the save and seed folders, ``outputs/channel_rectangle/params.json``.
+ROI sets in the save and seed folders, the cohort's ``channel_rectangle_params.json``.
 Writes: ``<roi_set_dir>/<key>.yaml`` on save (with ``channel_rectangle`` for a page whose
 rectangle was moved), ``<roi_set_dir>/alignment_images/<key>_odd.tif`` / ``_even.tif`` /
 ``_odd_even.json``, the rebuilt sets on "Rebuild saved sets", and Qt preferences (window
@@ -118,8 +119,14 @@ def main() -> None:
     args = build_runtime_args()
     from .logic import REPO_ROOT
 
-    # The ROI-set folders and the scripts' own defaults are relative to the repository.
-    os.chdir(REPO_ROOT)
+    # The default ROI-set folders (Settings) are relative to the working folder. Started
+    # from the GUI that is the cohort folder; started anywhere inside the code folder,
+    # move to the workspace so nothing is written there (M8).
+    here = Path.cwd().resolve()
+    if here == REPO_ROOT or REPO_ROOT in here.parents:
+        from .controller import workspace
+        workspace().mkdir(parents=True, exist_ok=True)
+        os.chdir(workspace())
     from qtkit.qt import QtCore, QtWidgets
     from .window import EditorWindow
 

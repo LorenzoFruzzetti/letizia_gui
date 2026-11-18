@@ -799,3 +799,80 @@ def test_batch_records_the_level_region(tmp_path, small_geometry, debug):
             assert str(npz["channel_order"]) == "emo_first"
             levels[region] = float(npz["channel_level_odd"])
     assert levels["frame"] != levels["roi_union"]
+
+
+# ---------------------------------------------------------------------------
+# extract_cohort: the channel order chosen in the ROI editor (ROI set channel_order)
+# ---------------------------------------------------------------------------
+def _order_run(tmp_path: Path, monkeypatch):
+    """Two recordings that alternate clearly with GCaMP odd (auto -> gcamp_first); A0 has a
+    ROI set, A1 none."""
+    folders = [write_recording(tmp_path / "raw" / f"A{i}" / "t1", gcamp_odd=True, seed=i + 1)
+               for i in range(2)]
+    roi_sets = tmp_path / "rebuilt"
+    roi_sets.mkdir()
+    args = _batch_args(tmp_path, channel_buffer="ram", roi_set_dir=str(roi_sets))
+    args.manifest = str(tmp_path / "manifest.csv")
+    _write_manifest(Path(args.manifest), folders)
+    monkeypatch.setattr(batch, "build_runtime_args", lambda: args)
+    return args, roi_sets / "210101_A0_t1.yaml"
+
+
+ATLAS = Path(__file__).resolve().parents[1] / "atlas" / "cortex22_roi_set.yaml"
+
+
+def _write_order(roi_set: Path, order: str) -> None:
+    """A valid ROI set (the atlas) with ``channel_order`` appended, as the editor saves it."""
+    text = ATLAS.read_text(encoding="utf-8").rstrip("\n")
+    roi_set.write_text(f"{text}\nchannel_order: {order}\n", encoding="utf-8")
+
+
+def test_roi_set_channel_order_replaces_the_manifest_per_recording(tmp_path, small_geometry,
+                                                                  monkeypatch, capsys):
+    args, roi_set = _order_run(tmp_path, monkeypatch)
+    _write_order(roi_set, "emo_first")
+    batch.main()
+    plan = capsys.readouterr().out
+    assert "210101/A0/t1: emo_first (from roi_set)" in plan
+    assert "210101/A1/t1: auto (from manifest)" in plan
+    rows = {r["animal"]: r for r in _summary_rows(args)}
+    assert rows["A0"]["channel_order_source"] == "roi_set"
+    assert rows["A1"]["channel_order_source"] == "manifest"
+    with np.load(rows["A0"]["npz_path"]) as npz:
+        assert str(npz["channel_order"]) == "emo_first"
+        assert str(npz["channel_order_source"]) == "roi_set"
+    with np.load(rows["A1"]["npz_path"]) as npz:
+        assert str(npz["channel_order"]) == "gcamp_first"      # auto, as the manifest says
+        assert str(npz["channel_order_source"]) == "manifest"
+
+
+def test_invalid_roi_set_channel_order_raises(tmp_path, small_geometry, monkeypatch):
+    args, roi_set = _order_run(tmp_path, monkeypatch)
+    _write_order(roi_set, "odd")
+    with pytest.raises(ValueError, match="channel_order must be one of"):
+        batch.main()
+    assert not Path(args.output_root).exists()          # refused before anything was written
+
+
+def test_dry_run_shows_the_orders_and_writes_nothing(tmp_path, small_geometry, monkeypatch, capsys):
+    args, roi_set = _order_run(tmp_path, monkeypatch)
+    _write_order(roi_set, "emo_first")
+    args.dry_run = True
+    batch.main()
+    out = capsys.readouterr().out
+    assert "210101/A0/t1: emo_first (from roi_set)" in out and "Dry run" in out
+    assert not Path(args.output_root).exists()
+
+
+def test_changed_roi_set_channel_order_is_extracted_again(tmp_path, small_geometry, monkeypatch):
+    args, roi_set = _order_run(tmp_path, monkeypatch)
+    _write_order(roi_set, "emo_first")
+    batch.main()
+    untouched = Path(args.output_root, "210101_A1", "t1", "connectivity_full.npz")
+    before = untouched.stat().st_mtime_ns
+    _write_order(roi_set, "gcamp_first")
+    batch.main()                                        # skip_existing: a resume
+    rows = {r["animal"]: r for r in _summary_rows(args)}
+    with np.load(rows["A0"]["npz_path"]) as npz:
+        assert str(npz["channel_order"]) == "gcamp_first"
+    assert untouched.stat().st_mtime_ns == before       # the other recording is not redone

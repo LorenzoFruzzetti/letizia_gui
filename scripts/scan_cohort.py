@@ -5,16 +5,16 @@ and its tables:
 
   * ``sessions.csv``  session folder -> day (yymmdd) and timepoint; ``include`` false skips it;
   * ``animals.csv``   animal folder name -> animal (aliases are rows with the same animal);
-  * the cohort file   raw_root, link_root, acquisition.file_glob / frame_order / expected_files.
+  * the cohort file   raw_root, acquisition.file_glob / frame_order / expected_files.
 
 Writes:
   * ``recordings.csv`` (cohort table): one row per recording folder, runnable or not, with a
     ``status`` (ok / empty / not_a_recording / frame_gap / wrong_count / parity_break). The
     user's ``use`` and ``channel_order`` edits of an earlier scan are kept;
-  * the manifest (extract_cohort layout; logic/manifest.py), paths through the junction
-    view when ``manifest_paths: link``;
-  * the junction view ``<link_root>\\<yymmdd>\\<animal>\\<t#>`` -> raw folder (Windows only):
-    the ROI editor keys a page by the last three path parts.
+  * ``manifest.csv`` in the cohort folder (extract_cohort layout; logic/manifest.py), its
+    recording paths through the junction view;
+  * the junction view ``<cohort folder>\\links\\<yymmdd>\\<animal>\\<t#>`` -> raw folder
+    (Windows only): the ROI editor keys a page by the last three path parts.
 
 Run it:
     conda run --no-capture-output -n wfci_gui python -u scan_cohort.py --cohort <cohort folder>/cohort.yaml
@@ -36,7 +36,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from wfci_gui.logic.cohort import (  # noqa: E402
-    Cohort, load_cohort, load_tables, parse_bool, validate_tables, write_table, write_text_atomic,
+    Cohort, load_script_cohort, load_tables, parse_bool, validate_tables, write_table, write_text_atomic,
 )
 from wfci_gui.logic.manifest import (  # noqa: E402
     MANIFEST_DEFAULTS, link_path, manifest_rows, manifest_text,
@@ -44,7 +44,7 @@ from wfci_gui.logic.manifest import (  # noqa: E402
 
 # Edit this section to run without CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,  # path to the cohort file (or pass --cohort)
+    "cohort_file": None,  # <cohort folder>/cohort.yaml (or pass --cohort)
     "walk": True,               # False: no raw-disk read; manifest + junctions from recordings.csv
     "make_links": True,         # False: create no junctions
     # Read the first and last image pair of each recording to check that the bright
@@ -64,7 +64,8 @@ FRAME_NUMBER_RE = re.compile(r"(\d+)\.[^.]+$")
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Scan a cohort's raw folders into recordings.csv, manifest, junctions.")
-    p.add_argument("--cohort", default=defaults["cohort"], help="Cohort file (cohorts/<name>.yaml).")
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--walk", action=argparse.BooleanOptionalAction, default=defaults["walk"],
                    help="Read the raw folders (--no-walk: rebuild from recordings.csv).")
     p.add_argument("--make-links", action=argparse.BooleanOptionalAction, default=defaults["make_links"])
@@ -125,7 +126,7 @@ def walk(cohort: Cohort, tables: dict, args: argparse.Namespace) -> tuple[list[d
     frame_order = acquisition.get("frame_order") or "name"
     expected = acquisition.get("expected_files")
     recording_re = re.compile(args.recording_pattern)
-    raw_root = Path(cohort.get("raw_root"))
+    raw_root = cohort.raw_root
     if not raw_root.is_dir():
         raise FileNotFoundError(f"raw_root {raw_root} does not exist (is the disk plugged in?)")
     sessions = tables["sessions"]
@@ -232,7 +233,7 @@ def make_links(cohort: Cohort, recordings) -> int:
 
 def main() -> None:
     args = build_runtime_args()
-    cohort = load_cohort(args.cohort)
+    cohort = load_script_cohort(args.cohort_file)
     tables = load_tables(cohort)
     issues = validate_tables(cohort, tables)
     for kind in ("sessions", "animals"):
@@ -253,17 +254,17 @@ def main() -> None:
     settings = dict(default_bregma_row=args.default_bregma_row,
                     default_bregma_col=args.default_bregma_col, profile=args.profile)
     manifest = manifest_rows(cohort, recordings, tables["animals"], settings)
-    write_text_atomic(cohort.path_of("manifest"), manifest_text(manifest))
-    made = make_links(cohort, recordings) if args.make_links and cohort.get("link_root") else 0
+    write_text_atomic(cohort.layout.manifest, manifest_text(manifest))
+    made = make_links(cohort, recordings) if args.make_links else 0
 
     print(f"Cohort    : {cohort.path}")
-    print(f"Raw root  : {cohort.get('raw_root')}")
+    print(f"Raw root  : {cohort.raw_root}")
     counts = recordings["status"].value_counts().to_dict()
     print(f"Recordings: {cohort.table_path('recordings')} ({len(recordings)} folders: {counts})")
-    print(f"Manifest  : {cohort.path_of('manifest')} ({len(manifest)} rows, "
+    print(f"Manifest  : {cohort.layout.manifest} ({len(manifest)} rows, "
           f"{sum(r['n_recordings'] for r in manifest)} recordings)")
-    print(f"Junctions : {made} created under {cohort.get('link_root')}" if cohort.get("link_root")
-          else "Junctions : none (no link_root)")
+    print(f"Junctions : {made} created under {cohort.layout.links}" if args.make_links
+          else "Junctions : none created (--no-make-links)")
     for note in notes:
         print(f"  note: {note}")
     for row in recordings.itertuples():

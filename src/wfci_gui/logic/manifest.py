@@ -40,8 +40,8 @@ def recording_number(name: str) -> int:
 
 
 def link_path(cohort: Cohort, day: str, animal: str, recording: str | None = None) -> Path:
-    """Junction-view path ``<link_root>\\<yymmdd>\\<animal>[\\<t#>]``."""
-    path = Path(cohort.get("link_root")) / day / animal
+    """Junction-view path ``<cohort folder>\\links\\<yymmdd>\\<animal>[\\<t#>]``."""
+    path = cohort.layout.links / day / animal
     return path / recording if recording else path
 
 
@@ -51,10 +51,11 @@ def manifest_rows(cohort: Cohort, recordings: pd.DataFrame, animals: pd.DataFram
 
     A unit whose recordings need different explicit channel orders is written as one
     row per recording, the only way the manifest can express a per-recording order.
+    Recording paths go through the cohort's junction view (``links/<yymmdd>/<animal>/<t#>``),
+    so the last three path parts are the recording's key wherever the raw folders are.
     """
     settings = {**MANIFEST_DEFAULTS, **(settings or {})}
     groups = dict(zip(animals["animal"], animals["group"])) if not animals.empty else {}
-    style = cohort.get("manifest_paths")
     ok = recordings[(recordings["status"] == "ok") & recordings["use"].map(parse_bool)]
     units: dict[tuple[str, str], list[Any]] = {}
     for row in ok.itertuples(index=False):
@@ -65,12 +66,8 @@ def manifest_rows(cohort: Cohort, recordings: pd.DataFrame, animals: pd.DataFram
         orders = {r.channel_order for r in recs}
         batches = [recs] if len(orders) == 1 else [[r] for r in recs]
         for batch in batches:
-            if style == "link":
-                paths = [str(link_path(cohort, day, animal, r.recording)) for r in batch]
-                animal_path = str(link_path(cohort, day, animal))
-            else:
-                paths = [r.path for r in batch]
-                animal_path = str(Path(batch[0].path).parent)
+            paths = [str(link_path(cohort, day, animal, r.recording)) for r in batch]
+            animal_path = str(link_path(cohort, day, animal))
             rows.append(dict(
                 day=day, animal=animal, group=groups.get(animal, "NA"), n_recordings=len(batch),
                 recordings=";".join(r.recording for r in batch),
@@ -92,7 +89,7 @@ def manifest_text(rows: list[dict[str, Any]]) -> str:
 def manifest_matches(cohort: Cohort, tables: dict[str, pd.DataFrame],
                      settings: dict[str, Any] | None = None) -> tuple[bool, str]:
     """(matches, reason): is the manifest on disk what the tables would produce?"""
-    path = cohort.path_of("manifest")
+    path = cohort.layout.manifest
     if not path.exists():
         return False, f"no manifest at {path}"
     if tables["recordings"].empty:

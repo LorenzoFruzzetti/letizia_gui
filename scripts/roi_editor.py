@@ -147,7 +147,6 @@ import tifffile
 import yaml
 
 from channel_rectangle import (
-    DEFAULT_PARAMS_PATH as RECTANGLE_PARAMS_PATH,
     RectangleParams,
     decide as rectangle_decide,
     decision_problem as rectangle_problem,
@@ -169,6 +168,11 @@ from wfci import (
 # Edit this section to run without CLI flags.
 # ---------------------------------------------------------------------------
 RUN_CONFIG: dict[str, Any] = {
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort). It fills every
+    # folder below that is None: manifest (its manifest.csv), roi_set_dir
+    # (roi_sets/reviewed), roi_seed_dir (roi_sets/rebuilt) and channel_rectangle_params
+    # (its channel_rectangle_params.json). Without a cohort, roi_set_dir must be given.
+    "cohort_file": None,
     # Where the sessions come from. Give a manifest (from scan_cohort.py)
     # OR set it to None and list folders explicitly below.
     "manifest": None,
@@ -199,8 +203,8 @@ RUN_CONFIG: dict[str, Any] = {
     # Midline-rectangle channel check (channel_rectangle.py, tuned in
     # scripts/channel_rectangle_viewer.py): the rectangle is drawn on every page and
     # the header says which interleaved group (odd/even) it calls GCaMP. Its parameters
-    # come from this params.json (the viewer's Save); missing file = the module defaults.
-    "channel_rectangle_params": "outputs/channel_rectangle/params.json",
+    # come from this params.json (the viewer's Save); None or a missing file = the module defaults.
+    "channel_rectangle_params": None,
     # Raw frames of EACH parity averaged for the decision (read once per page).
     "rectangle_frames": 10,
     # Fallback Bregma (RUN_CONFIG units, i.e. 2 x the final-grid pixel) used in
@@ -235,13 +239,13 @@ RUN_CONFIG: dict[str, Any] = {
     # one-sided layout.
     "mirror_lock": True,
     # Where ROI sets are WRITTEN (and, unless roi_seed_dir is set, also read from).
-    "roi_set_dir": r"roi_sets/reviewed",
+    "roi_set_dir": None,
     # Optional read-only directory of starting layouts. When set, a page with no saved
     # set of its own in roi_set_dir is seeded from <roi_seed_dir>/<key>.yaml instead of
     # the profile atlas, and saves still go to roi_set_dir -- so a verified reference
     # set can be opened, inspected and adjusted without ever being overwritten.
     # None = read starting layouts from roi_set_dir, the original single-directory behaviour.
-    "roi_seed_dir": r"roi_sets/rebuilt",
+    "roi_seed_dir": None,
     # Filename of the ONE shared set written by the 'w' key -- the "same ROIs for
     # every session" option.
     "shared_name": "shared_roi_set.yaml",
@@ -260,10 +264,10 @@ RUN_CONFIG: dict[str, Any] = {
     # When set, sessions are built directly from these images -- no interleaved
     # recording folder is needed. Overrides "manifest" and "folders".
     # Images baked by bake_alignment_images.py need no source disk while drawing.
-    # Each page opens on its own roi_sets\reviewed set, else its roi_sets\rebuilt
+    # Each page opens on its own roi_set_dir set, else its roi_seed_dir
     # set, else "start_from", else the atlas.
-    # Set to None to use "folders" again.
-    "image_dir": r"roi_sets\reviewed\alignment_images",
+    # None: use "manifest" / "folders".
+    "image_dir": None,
     # Which images in image_dir become pages (glob on the <key>.tif name), sorted by
     # name -- so an animal-only glob orders that mouse's pages by date, which is what
     # makes 'c' (copy previous page) carry a layout from one session to the next.
@@ -1211,7 +1215,7 @@ class ROIEditor:
         # The midline rectangle of the channel check (channel_rectangle.py): follows
         # Bregma and Lambda; the header states the GCaMP group it decides.
         self.rectangle_params: RectangleParams = rectangle_params_or_default(
-            getattr(self.args, "channel_rectangle_params", RECTANGLE_PARAMS_PATH))
+            getattr(self.args, "channel_rectangle_params", None))
         self.rectangle_line = pg.PlotDataItem(
             pen=pg.mkPen((255, 140, 0), width=2, style=QtCore.Qt.DashLine))
         self.rectangle_line.setZValue(98)
@@ -2301,6 +2305,8 @@ def _clamp_float(value: float, low: float, high: float) -> float:
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     """Minimal CLI overrides; everything else stays in RUN_CONFIG."""
     p = argparse.ArgumentParser(description="Interactive ROI / Bregma editor.")
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file; fills the folders that are not given.")
     p.add_argument("--manifest", default=defaults["manifest"],
                    help="Manifest CSV; omit --folders to use it.")
     p.add_argument("--folders", nargs="*", default=defaults["folders"],
@@ -2356,11 +2362,36 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 
 
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
-    """Prefer CLI args when any are given, else fall back to RUN_CONFIG (editor mode)."""
+    """Prefer CLI args when any are given, else fall back to RUN_CONFIG (editor mode);
+    then fill the folders left None from the cohort file (``apply_cohort``)."""
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
+        return apply_cohort(parse_args(defaults=config))
+    return apply_cohort(_config_namespace(config))
+
+
+def apply_cohort(args: argparse.Namespace) -> argparse.Namespace:
+    """Folders left None come from the cohort file. Without a cohort file the save
+    folder must be given ("set cohort_file or pass --cohort")."""
+    if args.cohort_file is None:
+        if args.roi_set_dir is None:
+            raise ValueError("set cohort_file or pass --cohort")
+        return args
+    from wfci_gui.logic.cohort import load_script_cohort
+    layout = load_script_cohort(args.cohort_file).layout
+    defaults = dict(roi_set_dir=layout.reviewed_roi_sets, roi_seed_dir=layout.rebuilt_roi_sets,
+                    channel_rectangle_params=layout.channel_rectangle_params)
+    if not args.folders and args.image_dir is None:
+        defaults["manifest"] = layout.manifest
+    for name, value in defaults.items():
+        if getattr(args, name) is None:
+            setattr(args, name, str(value))
+    return args
+
+
+def _config_namespace(config: dict[str, Any]) -> argparse.Namespace:
     return argparse.Namespace(
+        cohort_file=config["cohort_file"],
         manifest=config["manifest"],
         folders=list(config["folders"]),
         scope=config["scope"],

@@ -59,12 +59,13 @@ SETTINGS_HINTS = {
     "roi_seed_dir": FieldHint("dir", optional=True),
     "rebuilt_dir": FieldHint("dir", optional=True, placeholder="empty = the seed folder"),
     "start_from": FieldHint("file", optional=True),
+    "rectangle_params": FieldHint("file", optional=True, placeholder="empty = the default parameters"),
 }
 CONTROLS_TEXT = (HELP + "\n\nTWO PANELS: 'odd' and 'even' are the two interleaved frame groups (no channel "
                  "label on purpose). Everything is drawn on both; a drag in either moves both.\n"
                  "CHANNEL RECTANGLE (orange): drag it along the Bregma-Lambda axis, or its handles for "
                  "length and width. A moved rectangle belongs to this recording and is saved in its ROI "
-                 "set; Rectangle > Reset goes back to params.json.\n"
+                 "set; Rectangle > Reset goes back to the cohort's channel_rectangle_params.json.\n"
                  "Every command is also in the menus; shortcuts can be changed in Settings > Keyboard "
                  "shortcuts. Ctrl+Z / Ctrl+Y undo and redo any edit, PgUp / PgDn change page.")
 RECENT_LIMIT = 10
@@ -694,7 +695,14 @@ class EditorWindow(ShellWindow):
         process.setProgram(sys.executable)
         process.setArguments(["-u", str(REPO_ROOT / "scripts" / "rebuild_roi_sets.py"), "--roi-set-dir", str(self.copy_dir),
                               "--out-dir", str(settings.rebuilt), *rebuild_options(self.controller.data.cohort)])
-        process.setWorkingDirectory(str(REPO_ROOT))
+        process.setWorkingDirectory(str(self.copy_dir))
+        # The same PYTHONPATH and bytecode folder as a GUI job: this copy's code, never
+        # another installation of it.
+        from wfci_gui.logic.conda import job_environment
+        environment = QtCore.QProcessEnvironment()
+        for key, value in job_environment(REPO_ROOT).items():
+            environment.insert(key, value)
+        process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         process.readyReadStandardOutput.connect(self._read_process)
         process.finished.connect(self._rebuild_finished)

@@ -1,6 +1,6 @@
 """Write a cohort's experimental design table from its cohort file and tables.
 
-``design_csv`` (default ``<pixel_root>/experimental_design.csv``): one row per used recording that is not
+``<cohort folder>/design.csv``: one row per used recording that is not
 excluded, with the columns the analysis scripts read:
 
     recording_id, day, animal, group, mouse_line, day_index, animal_day, days_since_day1,
@@ -31,12 +31,11 @@ from design_helpers import (  # noqa: E402
     add_days_since_day1, add_recording_index, add_within_animal_day_index,
 )
 from wfci_gui.logic.cohort import (  # noqa: E402
-    load_cohort, load_tables, parse_bool, used_recordings, write_text_atomic,
+    load_script_cohort, load_tables, parse_bool, used_recordings, write_text_atomic,
 )
 
 RUN_CONFIG: dict[str, Any] = {
-    "cohort": None,  # path to the cohort file (or pass --cohort)
-    "output": None,             # None = the cohort's design_csv (<pixel_root>/experimental_design.csv)
+    "cohort_file": None,  # <cohort folder>/cohort.yaml (or pass --cohort)
     "prefer_cli_args": True,
 }
 DESIGN_FIELDS = [
@@ -48,8 +47,7 @@ DESIGN_FIELDS = [
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build a cohort's experimental_design.csv.")
-    p.add_argument("--cohort", default=defaults["cohort"])
-    p.add_argument("--output", default=defaults["output"], help="Design CSV path (default: the cohort's).")
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"])
     return p.parse_args()
 
 
@@ -94,10 +92,10 @@ def build_design(cohort, tables) -> pd.DataFrame:
 
 def main() -> None:
     args = build_runtime_args()
-    cohort = load_cohort(args.cohort)
+    cohort = load_script_cohort(args.cohort_file)
     tables = load_tables(cohort)
     design = build_design(cohort, tables)
-    out = Path(args.output) if args.output else cohort.path_of("design_csv")
+    out = cohort.layout.design_csv
     # CRLF, as pandas writes on Windows and as the existing design tables are.
     write_text_atomic(out, design.to_csv(index=False, lineterminator="\r\n"))
     print(f"Design: {out} ({len(design)} recordings, {design['animal'].nunique()} animals, "

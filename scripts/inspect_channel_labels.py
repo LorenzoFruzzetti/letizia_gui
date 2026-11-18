@@ -26,8 +26,10 @@ Keys:
     q                close
 
 Run (in the wfci_gui environment):
-    python inspect_channel_labels.py
-    python inspect_channel_labels.py --session 200101 --unit A1
+    python inspect_channel_labels.py --cohort <cohort folder>/cohort.yaml
+    python inspect_channel_labels.py --cohort <...>/cohort.yaml --session 200101 --unit A1
+
+The dumps and the frame rate come from the cohort file.
 
 Edit RUN_CONFIG below to run directly from the editor without CLI arguments.
 """
@@ -46,14 +48,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-REPO_ROOT = Path(__file__).resolve().parent
-
 # Edit this section to run without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data",
+    "cohort_file": None,          # <cohort folder>/cohort.yaml (or pass --cohort)
     "session": None,              # <yymmdd> prefix of the unit folders; None = all
     "unit": None,                 # e.g. "A1" to start on one animal; None = first
-    "sampling_rate_hz": 25.0,     # per channel frame rate of the dumps
     "color_percentiles": (1.0, 99.0),
     "prefer_cli_args": True,
 }
@@ -61,10 +60,10 @@ RUN_CONFIG: dict[str, Any] = {
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--pixel-root", type=Path, default=defaults["pixel_root"])
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--session", default=defaults["session"])
     p.add_argument("--unit", default=defaults["unit"])
-    p.add_argument("--sampling-rate-hz", type=float, default=defaults["sampling_rate_hz"])
     p.add_argument("--color-percentiles", type=float, nargs=2,
                    default=defaults["color_percentiles"])
     return p.parse_args()
@@ -73,14 +72,20 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(
-        pixel_root=Path(config["pixel_root"]),
-        session=config["session"],
-        unit=config["unit"],
-        sampling_rate_hz=config["sampling_rate_hz"],
-        color_percentiles=config["color_percentiles"],
-    )
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(
+            cohort_file=config["cohort_file"],
+            session=config["session"],
+            unit=config["unit"],
+            color_percentiles=config["color_percentiles"],
+        )
+    # The dumps and the frame rate come from the cohort file.
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.sampling_rate_hz = float(acquisition_value(cohort, "sampling_rate_hz"))
+    return args
 
 
 def find_recordings(pixel_root: Path, session: str | None) -> list[Path]:

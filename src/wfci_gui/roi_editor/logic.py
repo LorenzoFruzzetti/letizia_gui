@@ -133,11 +133,22 @@ class EditorSettings:
     roi_seed_dir: str | None = "roi_sets/rebuilt"
     rebuilt_dir: str | None = None
     start_from: str | None = None
+    # Folder of the cached odd / even images; None = <roi_set_dir>/alignment_images.
+    # A cohort's is its roi_sets/alignment_images.
+    image_dir: str | None = None
+    # The global channel-rectangle parameters (a cohort's channel_rectangle_params.json);
+    # None or a missing file = channel_rectangle.py's defaults.
+    rectangle_params: str | None = None
     # One setting for both the two panels and the rectangle decision:
     # the first N odd and the first N even frames are averaged.
     frames_per_parity: int = field(default=10, metadata=dict(
         doc="Frames of each parity (odd / even) averaged into the two images and the "
             "rectangle decision", unit="frames", minimum=1, maximum=200))
+
+    @property
+    def cache_dir(self) -> Path:
+        """Where the odd / even image pairs are cached."""
+        return Path(self.image_dir) if self.image_dir else Path(self.roi_set_dir) / "alignment_images"
 
     @property
     def rebuilt(self) -> str | None:
@@ -164,7 +175,9 @@ def make_settings(values: dict[str, Any], need_folder: bool = True) -> EditorSet
         folder=folder, pattern=str(values["pattern"]), frame_order=values["frame_order"],
         rot90_k=int(values["rot90_k"]), roi_set_dir=str(values["roi_set_dir"]),
         roi_seed_dir=values.get("roi_seed_dir") or None, rebuilt_dir=values.get("rebuilt_dir") or None,
-        start_from=values.get("start_from") or None, frames_per_parity=int(values["frames_per_parity"]))
+        start_from=values.get("start_from") or None, image_dir=values.get("image_dir") or None,
+        rectangle_params=values.get("rectangle_params") or None,
+        frames_per_parity=int(values["frames_per_parity"]))
 
 
 def default_values() -> dict[str, Any]:
@@ -186,7 +199,6 @@ EDITOR_DEFAULTS: dict[str, Any] = {
     "rotate_with_lambda": True,
     "load_existing": True,
     "shared_name": "shared_roi_set.yaml",
-    "channel_rectangle_params": "outputs/channel_rectangle/params.json",
 }
 
 
@@ -195,12 +207,15 @@ def cohort_values(cohort_path: str | Path) -> dict[str, Any]:
     from wfci_gui.logic.cohort import load_cohort
     cohort = load_cohort(cohort_path)
     acquisition = cohort.acquisition
-    return dict(folder=[str(cohort.path_of("link_root") or Path(cohort.get("raw_root")))],
+    layout = cohort.layout
+    return dict(folder=[str(layout.links)],
                 pattern=acquisition["file_glob"], frame_order=acquisition["frame_order"],
                 rot90_k=acquisition["rot90_k"],
-                roi_set_dir=str(cohort.path_of("reviewed_roi_set_dir")),
-                roi_seed_dir=str(cohort.path_of("roi_set_dir")),
-                rebuilt_dir=str(cohort.path_of("roi_set_dir")))
+                roi_set_dir=str(layout.reviewed_roi_sets),
+                roi_seed_dir=str(layout.rebuilt_roi_sets),
+                rebuilt_dir=str(layout.rebuilt_roi_sets),
+                image_dir=str(layout.alignment_images),
+                rectangle_params=str(layout.channel_rectangle_params))
 
 
 def resolve_settings(cohort: str | None, flags: dict[str, Any], need_folder: bool = True) -> EditorSettings:

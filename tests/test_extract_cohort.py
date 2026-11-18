@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import extract_cohort as batch
+from gui_cohort_tree import make_cohort
 
 
 def test_resolve_workers_uses_75_percent_and_caps_explicit_values(monkeypatch):
@@ -18,8 +19,9 @@ def test_resolve_workers_uses_75_percent_and_caps_explicit_values(monkeypatch):
     assert batch.resolve_workers(99) == 20
 
 
-def test_project_default_is_reliable_serial_execution():
-    args = batch.build_runtime_args(dict(batch.RUN_CONFIG, prefer_cli_args=False))
+def test_project_default_is_reliable_serial_execution(tmp_path):
+    args = batch.build_runtime_args(dict(batch.RUN_CONFIG, cohort_file=str(make_cohort(tmp_path)),
+                                         prefer_cli_args=False))
 
     assert args.workers == 1
     assert batch.resolve_workers(args.workers) == 1
@@ -159,7 +161,7 @@ def test_workers_one_never_constructs_a_process_pool(tmp_path, monkeypatch):
     assert batch._summary_key(recovered[0]) == ('200611', 'A5', 'full', 't1')
 
 
-def test_save_data_config_reaches_the_namespace_intact():
+def test_save_data_config_reaches_the_namespace_intact(tmp_path):
     """Every save_data key must survive build_runtime_args' editor path.
 
     That path builds an explicit Namespace field by field rather than splatting
@@ -167,20 +169,21 @@ def test_save_data_config_reaches_the_namespace_intact():
     until a run reaches the code that reads it -- late, and only when the flag is
     on. Assert the whole set instead.
 
-    The values asserted are the configured defaults: dumps ON, into
-    pixel_data\\. If the defaults change, update them here -- but never drop an
+    The values asserted are the configured defaults: dumps ON, into the
+    cohort's pixel_data\\. If the defaults change, update them here -- but never drop an
     assertion, that is the point.
     """
-    args = batch.build_runtime_args(dict(batch.RUN_CONFIG, prefer_cli_args=False))
+    cohort = make_cohort(tmp_path)
+    args = batch.build_runtime_args(dict(batch.RUN_CONFIG, cohort_file=str(cohort), prefer_cli_args=False))
 
     assert args.save_data is True, 'this run dumps the per-pixel volumes'
-    assert args.save_data_root == 'pixel_data'
+    assert args.save_data_root == str(cohort.parent / 'pixel_data')
     assert args.save_data_window == (-29, 47, -44, 43)
     assert args.save_data_dff_dtype == 'float16'
     assert args.save_data_f_dtype == 'float32'
 
 
-def test_save_data_can_still_be_turned_off_from_the_cli(monkeypatch):
+def test_save_data_can_still_be_turned_off_from_the_cli(monkeypatch, tmp_path):
     """--no-save-data must beat RUN_CONFIG, now that the config default is ON.
 
     With the default off, forgetting the off-switch cost nothing. With it on, a
@@ -189,13 +192,14 @@ def test_save_data_can_still_be_turned_off_from_the_cli(monkeypatch):
     """
     import sys
 
-    monkeypatch.setattr(sys, 'argv', ['extract_cohort.py', '--no-save-data'])
+    cohort = make_cohort(tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['extract_cohort.py', '--cohort', str(cohort), '--no-save-data'])
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG))
 
     assert args.save_data is False
     # The rest of the dump settings still come through, so --save-data alone
     # on a later run needs no other flags.
-    assert args.save_data_root == 'pixel_data'
+    assert args.save_data_root == str(cohort.parent / 'pixel_data')
     assert args.save_data_window == (-29, 47, -44, 43)
 
 
@@ -318,17 +322,18 @@ def test_resume_looks_for_the_dump_under_save_data_root(tmp_path):
     assert batch._job_is_complete(job, args) is True
 
 
-def test_save_data_dtypes_and_root_are_settable_from_the_cli(monkeypatch):
-    """The output path and both storage dtypes must be reachable without editing code."""
+def test_save_data_dtypes_and_root_are_settable_without_editing_code(monkeypatch, tmp_path):
+    """Both storage dtypes from the CLI; the dump folder from the cohort file's pixel_root."""
+    cohort = make_cohort(tmp_path, pixel_root=r'\\nas\share\pixels')
     monkeypatch.setattr(
         batch.sys, 'argv',
-        ['extract_cohort.py', '--save-data', '--save-data-root', r'\\nas\pixels',
+        ['extract_cohort.py', '--cohort', str(cohort), '--save-data',
          '--save-data-dff-dtype', 'float32', '--save-data-f-dtype', 'float16'],
     )
     args = batch.build_runtime_args(dict(batch.RUN_CONFIG))
 
     assert args.save_data is True
-    assert args.save_data_root == r'\\nas\pixels'
+    assert args.save_data_root == r'\\nas\share\pixels'
     assert args.save_data_dff_dtype == 'float32'
     assert args.save_data_f_dtype == 'float16'
     # Not a flag: it changes which pixels the array contains, not just where it goes.

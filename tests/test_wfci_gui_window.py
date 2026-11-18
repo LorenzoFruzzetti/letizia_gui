@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -96,10 +97,10 @@ def test_qc_page_preticks_suggestions(window, tmp_path):
     _scan(path)
     cohort = load_cohort(path)
     keys = recording_keys()
-    write_extraction(cohort.path_of("output_root"), cohort.path_of("pixel_root"), keys, needs_decision=(keys[0],))
+    write_extraction(cohort.layout.outputs, cohort.layout.pixel_data, keys, needs_decision=(keys[0],))
     pd.DataFrame([dict(recording=k, day=k[:6], suggest="exclude" if k == keys[0] else "ok",
                        reason="channels do not alternate" if k == keys[0] else "") for k in keys]
-                 ).to_csv(cohort.path_of("output_root") / "qc_table.csv", index=False)
+                 ).to_csv(cohort.layout.outputs / "qc_table.csv", index=False)
     window.open_cohort(path)
     window.show_step_view("qc")
     frame = window.pages["qc"].model.frame
@@ -115,16 +116,22 @@ def test_analysis_a_run_disabled_until_design_complete(window, tmp_path):
     design = pd.DataFrame(dict(day=["200101", "200101", "200104"], animal=["M1", "M2", "M1"],
                                recording=["t1", "t1", "t1"], timepoint=["BL", "BL", "3D"],
                                group=["ctrl", "ctrl", "ctrl"]))
-    cohort.path_of("design_csv").parent.mkdir(parents=True, exist_ok=True)
-    design.to_csv(cohort.path_of("design_csv"), index=False)
+    design.to_csv(cohort.layout.design_csv, index=False)
     window.open_cohort(path)
-    window.controller.set_override("analysis_a", "stats_cohort", "default")
     page = window.pages["analysis_a"]
     window.show_step_view("analysis_a")
     assert not page.run_all.isEnabled()
     assert "M2" in page.check.text()
     window.controller.set_override("analysis_a", "animals", ["M1"])
     assert "at least two animals" in page.check.text()
+    # A complete design is enough: no per-cohort entry in the statistics script is needed.
+    window.controller.set_override("analysis_a", "timepoints", ["BL"])
+    window.controller.set_override("analysis_a", "animals", ["M1", "M2"])
+    assert "later timepoint" in page.check.text()
+    design.loc[len(design)] = dict(day="200104", animal="M2", recording="t1", timepoint="3D", group="ctrl")
+    design.to_csv(cohort.layout.design_csv, index=False)
+    window.controller.reset_override("analysis_a", "timepoints")
+    assert page.run_all.isEnabled(), page.check.text()
     window.controller.revert_cohort()
 
 
@@ -136,4 +143,17 @@ def test_rois_page_starts_the_new_editor_with_the_cohort(window, tmp_path):
     job = window.controller.new_roi_editor_job()
     assert job.step == "rois" and job.command[-4:] == ["-m", "wfci_gui.roi_editor", "--cohort", str(path)]
     labels = [b.text() for b in window.pages["rois"].findChildren(QtWidgets.QPushButton)]
-    assert "Open ROI editor" in labels and "Open old ROI editor" in labels
+    assert "Open ROI editor" in labels and "Open old ROI editor" not in labels
+
+
+def test_workspace_is_kept_in_the_user_settings(window, tmp_path):
+    from wfci_gui.logic.layout import cohort_file_in
+    assert not window.has_workspace()
+    window.set_workspace(tmp_path / "ws")
+    assert window.has_workspace() and window.workspace == (tmp_path / "ws").resolve()
+    path = make_cohort(tmp_path)            # tmp_path/workspace/fake/cohort.yaml
+    window.set_workspace(path.parent.parent)
+    assert [window.cohort_combo.itemText(i) for i in range(window.cohort_combo.count())] == ["", "fake"]
+    assert cohort_file_in(window.workspace, "fake") == path.resolve()
+    with pytest.raises(ValueError, match="inside the program folder"):
+        window.set_workspace(Path(__file__).resolve().parents[1] / "workspace")

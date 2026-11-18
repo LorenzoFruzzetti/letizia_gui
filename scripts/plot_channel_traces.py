@@ -1,6 +1,7 @@
 """GCaMP and reflectance (emo) channel traces over time, per session folder of a pixel-dump root.
 
-Study script. For every ``<pixel_root>\\<day>_<animal>\\`` folder it reads each
+Study script. For every ``<pixel data>\\<day>_<animal>\\`` folder of the cohort (``--cohort``:
+its ``pixel_data``, or the cohort file's ``pixel_root``; frame rate from its acquisition facts) it reads each
 recording's raw-F dumps (``pixels_f_gcamp_full.npy``, ``pixels_f_emo_full.npy``), reduces
 every frame to the mean over the union of that recording's ROI boxes (the same union
 roi_pixel_connectivity.py uses), and writes into ``<day>_<animal>\\plots\\``:
@@ -48,9 +49,10 @@ own ``channel_order`` and ``channel_verdict``; the tag is:
 disagreements over every done recording must equal ``expected_disagreements`` (when
 set) or the script raises.
 
-``--batch-summary-csv`` (status ``done``/``skipped`` and verdict per recording) drives the
-recording list, the tags and the gaps. Passing ``none`` to both ``--batch-summary-csv`` and
-``--old-manifest-csv`` turns tags and gaps off: every ``t#`` folder with dumps is drawn.
+The cohort's ``outputs\\batch_summary.csv`` (status ``done``/``skipped`` and verdict per
+recording; ``--batch-summary-csv``, default ``cohort``) drives the recording list, the tags and
+the gaps. Passing ``none`` to both ``--batch-summary-csv`` and ``--old-manifest-csv`` turns
+tags and gaps off: every ``t#`` folder with dumps is drawn.
 
 A recording with status ``needs_channel_decision`` (stored by position) is
 drawn like a done one but from ``pixels_f_odd_full.npy`` / ``pixels_f_even_full.npy``,
@@ -61,8 +63,8 @@ each as % from the mean of its own kind. The CSV then gains ``status``, ``mean_o
 
 Run:
     $env:PYTHONPATH = "$PWD\\src;$PWD\\scripts"
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -u plot_channel_traces.py
-    ... plot_channel_traces.py --pixel-root pixel_data --batch-summary-csv none --old-manifest-csv none --channel-assignment-csv none --expected-disagreements none
+    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -u plot_channel_traces.py --cohort <cohort folder>\\cohort.yaml
+    ... plot_channel_traces.py --cohort <...>\\cohort.yaml --batch-summary-csv none --old-manifest-csv none --channel-assignment-csv none --expected-disagreements none
 """
 from __future__ import annotations
 
@@ -82,20 +84,20 @@ import numpy as np
 from pixel_helpers import crop_slices
 from roi_pixel_connectivity import read_meta, recording_boxes
 
-REPO_ROOT = Path(__file__).resolve().parent
-
 # Edit this section to run without CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data",
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps,
+    # its batch summary and its frame rate.
+    "cohort_file": None,
     "channel_assignment_csv": "none",  # verdict table (recording_key, verdict); "none" = no comparison
-    "batch_summary_csv": REPO_ROOT / "outputs" / "batch_summary.csv",
+    # "cohort" = the cohort's outputs/batch_summary.csv; "none" turns tags and gaps off; or a path.
+    "batch_summary_csv": "cohort",
     "old_manifest_csv": "none",  # manifest with the OLD per-recording channel_order; "none" = no comparison
     "expected_disagreements": None,  # None skips the check
     "skipped_gap_frames": 2950,  # frames drawn for a skipped recording (118 s at 25 Hz)
     # "frame": channels as stored. "roi_union": re-decide the order from the cached
     # ROI-union levels, swap where it differs, write to plots_roi_union\ (see docstring).
     "level_region": "frame",
-    "sampling_rate_hz": 25.0,
     "smooth_s": 1.0,
     "workers": 8,
 }
@@ -472,11 +474,13 @@ def build_records(pixel_root: Path, args: argparse.Namespace) -> dict[str, list[
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--pixel-root", type=Path, default=RUN_CONFIG["pixel_root"])
+    p.add_argument("--cohort", dest="cohort_file", default=RUN_CONFIG["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--channel-assignment-csv", default=RUN_CONFIG["channel_assignment_csv"],
                    help="Verdict table (recording_key, verdict); 'none' to skip.")
     p.add_argument("--batch-summary-csv", default=RUN_CONFIG["batch_summary_csv"],
-                   help="status + channel_verdict per recording; 'none' turns tags and gaps off.")
+                   help="status + channel_verdict per recording: 'cohort' (the cohort's), 'none' "
+                        "(tags and gaps off) or a path.")
     p.add_argument("--old-manifest-csv", default=RUN_CONFIG["old_manifest_csv"],
                    help="Manifest with the OLD per-recording channel_order; 'none' to skip.")
     p.add_argument("--expected-disagreements", default=RUN_CONFIG["expected_disagreements"],
@@ -487,13 +491,20 @@ def parse_args() -> argparse.Namespace:
                    help="roi_union: re-label channels from the cached ROI-union levels, "
                         "into plots_roi_union/.")
     p.add_argument("--skipped-gap-frames", type=int, default=RUN_CONFIG["skipped_gap_frames"])
-    p.add_argument("--sampling-rate-hz", type=float, default=RUN_CONFIG["sampling_rate_hz"])
     p.add_argument("--smooth-s", type=float, default=RUN_CONFIG["smooth_s"])
     p.add_argument("--workers", type=int, default=RUN_CONFIG["workers"])
     p.add_argument("--select", nargs="*", default=None, help="Folder names, e.g. 200101_A1.")
     p.add_argument("--only-needs-decision", action="store_true",
                    help="Redraw only the units holding a needs_channel_decision recording.")
-    return p.parse_args()
+    args = p.parse_args()
+    # The dumps, the batch summary and the frame rate come from the cohort file.
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.sampling_rate_hz = float(acquisition_value(cohort, "sampling_rate_hz"))
+    if str(args.batch_summary_csv).lower() == "cohort":
+        args.batch_summary_csv = cohort.layout.batch_summary
+    return args
 
 
 def main() -> None:

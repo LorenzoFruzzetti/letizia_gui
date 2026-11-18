@@ -85,28 +85,16 @@ def test_manifest_with_mismatched_lists_is_refused(tmp_path):
         sources.manifest_recordings(manifest)
 
 
-def test_cohort_lookup_match_none_and_ambiguous(tmp_path):
-    cohorts = tmp_path / "cohorts"
-    cohorts.mkdir()
-    manifest = tmp_path / "m.csv"
+def test_a_manifests_cohort_is_the_cohort_file_in_its_folder(tmp_path):
+    from gui_cohort_tree import make_cohort
+    cohort = make_cohort(tmp_path)
+    manifest = cohort.parent / "manifest.csv"
     manifest.write_text(HEADER, encoding="utf-8")
-    (cohorts / "a.yaml").write_text(f"name: a\nmanifest: {manifest}\n", encoding="utf-8")
-    (cohorts / "b.yaml").write_text("name: b\nmanifest: somewhere_else.csv\n", encoding="utf-8")
-    assert sources.cohort_for_manifest(manifest, cohorts) == cohorts / "a.yaml"
-    assert sources.cohort_for_manifest(tmp_path / "other.csv", cohorts) is None
-    (cohorts / "c.yaml").write_text(f"name: c\nmanifest: {manifest}\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="ambiguous"):
-        sources.cohort_for_manifest(manifest, cohorts)
-
-
-def test_committed_cohorts_name_their_own_manifests():
-    """No two committed cohorts share a manifest; a manifest no cohort names has none."""
-    for cohort in sorted((REPO_ROOT / "cohorts").glob("*.yaml")):
-        import yaml
-        manifest = yaml.safe_load(cohort.read_text(encoding="utf-8")).get("manifest")
-        if manifest:
-            assert sources.cohort_for_manifest(REPO_ROOT / manifest) == cohort
-    assert sources.cohort_for_manifest(REPO_ROOT / "manifests" / "unnamed_manifest.csv") is None
+    assert sources.cohort_for_manifest(manifest) == cohort
+    loose = tmp_path / "loose" / "m.csv"                        # outside a cohort folder
+    loose.parent.mkdir()
+    loose.write_text(HEADER, encoding="utf-8")
+    assert sources.cohort_for_manifest(loose) is None
 
 
 def test_raw_read_writes_the_pair_and_the_sidecar_decides_validity(tmp_path):
@@ -121,7 +109,8 @@ def test_raw_read_writes_the_pair_and_the_sidecar_decides_validity(tmp_path):
     assert odd_256.shape == (16, 16) and page.image.shape == (8, 8)
     assert odd_256.mean() < even_256.mean()                 # odd files were the dim ones
     assert np.array_equal(page.odd_even_128[0], sources.to_128(odd_256))
-    paths = sources.cache_paths(s.roi_set_dir, page.key)
+    paths = sources.cache_paths(s.cache_dir, page.key)
+    assert paths["odd"].parent == Path(s.roi_set_dir) / "alignment_images"   # no image_dir: beside the sets
     assert not paths["legacy"].exists()                       # the old preview is never written
     cached = sources.read_cache(s, page.key)
     assert np.allclose(cached[0], page.odd_even_128[0]) and np.allclose(cached[1], page.odd_even_128[1])
@@ -163,9 +152,9 @@ def test_bake_alignment_images_writes_the_pair_the_editor_reads(tmp_path):
     import bake_alignment_images as bake
     folder = tmp_path / "raw" / "200711" / "A" / "t0"
     make_recording(folder, n_frames=8, size=32)
-    args = argparse.Namespace(pattern="*.tif", frame_order="name", rot90_k=0, roi_set_dir=str(tmp_path / "reviewed"),
-                              frames_per_parity=2, legacy_preview=False)
     image_dir = tmp_path / "reviewed" / "alignment_images"
+    args = argparse.Namespace(pattern="*.tif", frame_order="name", rot90_k=0, roi_set_dir=str(tmp_path / "reviewed"),
+                              image_dir=str(image_dir), frames_per_parity=2, legacy_preview=False)
     assert not bake.is_baked("200711_A_t0", image_dir, args)
     key, _seconds, skipped = bake.bake_pair(("200711_A_t0", str(folder), args))
     assert key == "200711_A_t0" and not skipped and bake.is_baked(key, image_dir, args)
@@ -174,3 +163,20 @@ def test_bake_alignment_images_writes_the_pair_the_editor_reads(tmp_path):
     odd_256, even_256 = sources.read_raw(folder, settings(tmp_path))
     assert np.allclose(odd, sources.to_128(odd_256)) and np.allclose(even, sources.to_128(even_256))
     assert not (image_dir / f"{key}.tif").exists()
+
+
+def test_bake_and_the_editor_share_the_cohorts_preview_folder(tmp_path):
+    """Both put the cached pairs in <cohort folder>/roi_sets/alignment_images."""
+    import bake_alignment_images as bake
+    from gui_cohort_tree import make_cohort
+    cohort = make_cohort(tmp_path)
+    folder = cohort.parent
+    args = bake.build_runtime_args(dict(bake.RUN_CONFIG, cohort_file=str(cohort), prefer_cli_args=False))
+    assert Path(args.root) == folder / "links"
+    assert Path(args.image_dir) == folder / "roi_sets" / "alignment_images"
+    assert (args.pattern, args.rot90_k, args.frame_order) == ("*.tif", 0, "number")
+    editor = logic.resolve_settings(str(cohort), {})
+    assert editor.cache_dir == folder / "roi_sets" / "alignment_images"
+    assert Path(editor.roi_set_dir) == folder / "roi_sets" / "reviewed"
+    assert Path(editor.rebuilt) == folder / "roi_sets" / "rebuilt"
+    assert bake.pair_settings(args).cache_dir == editor.cache_dir

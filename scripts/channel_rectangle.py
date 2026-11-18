@@ -15,7 +15,8 @@ and width_factor * d wide. Every parameter is a factor of d, so one parameter se
 at every scale and on any grid: the 128-grid editor uses the same corners divided by 2.
 
 Defaults: the constants in `RectangleParams` below, the default midline-rectangle
-parameters. A params.json saved from the viewer, when present, wins.
+parameters. A cohort's ``channel_rectangle_params.json`` (in the cohort folder, written by
+the viewer's Save; ``cohort_params_path``), when present, wins.
 
 Per recording: a ROI set may carry its own
 ``channel_rectangle: {length_factor, width_factor, start_offset_factor}``, written by the
@@ -32,8 +33,6 @@ from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_PARAMS_PATH = REPO_ROOT / "outputs" / "channel_rectangle" / "params.json"
 STATISTICS = ("median_level", "centre_flank", "spatial_cv")
 PARITIES = ("odd", "even")
 UNASSIGNED = "unassigned"
@@ -90,14 +89,17 @@ def load_params(path: Path) -> RectangleParams:
     return make_params(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def params_or_default(path: str | Path | None = DEFAULT_PARAMS_PATH) -> RectangleParams:
-    """The saved parameters when the file exists, else the defaults above."""
-    if path is not None:
-        path = Path(path)
-        path = path if path.is_absolute() else REPO_ROOT / path
-        if path.is_file():
-            return load_params(path)
+def params_or_default(path: str | Path | None = None) -> RectangleParams:
+    """The saved parameters when the file exists, else the defaults above (None = defaults)."""
+    if path is not None and Path(path).is_file():
+        return load_params(Path(path))
     return RectangleParams()
+
+
+def cohort_params_path(cohort_file: str | Path) -> Path:
+    """``<cohort folder>/channel_rectangle_params.json``: one cohort's global parameters."""
+    from wfci_gui.logic.layout import CohortLayout
+    return CohortLayout(cohort_file).channel_rectangle_params
 
 
 # ---------------------------------------------------------------------------

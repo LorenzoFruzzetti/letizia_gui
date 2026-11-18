@@ -19,22 +19,23 @@ L + start_offset_factor * d * u, is length_factor * d long and width_factor * d 
 Rotation is locked to the axis. Parameters are factors of d, so one saved set applies
 to every recording at its own scale.
 
-Inputs (defaults in RUN_CONFIG, all relative to the repo root):
-    <pixel_root>/<day>_<unit>/<t#>/pixels_meta_full.npz      mean_f, mean_r, channel_order, ...
-    roi_sets/rebuilt/<day>_<unit>_<t#>.yaml                   Bregma, Lambda offset, angle, flip
+Inputs (the cohort file, --cohort, gives every folder):
+    <pixel data>/<day>_<unit>/<t#>/pixels_meta_full.npz      mean_f, mean_r, channel_order, ...
+    <cohort folder>/roi_sets/rebuilt/<day>_<unit>_<t#>.yaml   Bregma, Lambda offset, angle, flip
     <assignment>.csv                                          recording_key -> channel_order
                                                               ('none', the default: no table,
                                                               column unassigned)
-Rule and default parameters: channel_rectangle.py (defaults = the params.json below).
-Output: outputs/channel_rectangle/params.json (Save) =
+Rule and default parameters: channel_rectangle.py (defaults when the cohort has no params file).
+Output: <cohort folder>/channel_rectangle_params.json (Save) =
     {length_factor, width_factor, start_offset_factor, statistic}
+The ROI editor and qc_cohort.py read the same file.
 
 Run (wfci_gui env; always through conda run, the env's python.exe alone cannot load numpy's BLAS):
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run -n wfci_gui python scripts/channel_rectangle_viewer.py
+    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run -n wfci_gui python scripts/channel_rectangle_viewer.py --cohort <cohort folder>/cohort.yaml --day 200101 --units A1 A2
 or press Run in the editor (RUN_CONFIG below). CLI flags override RUN_CONFIG.
 
 Keys: Up/Down in the table or PgUp/PgDn = previous/next recording; Ctrl+, parameters;
-Ctrl+S / Ctrl+O save / load params.json; Ctrl+L shared contrast scale; Ctrl+0 fit view.
+Ctrl+S / Ctrl+O save / load the cohort's channel_rectangle_params.json; Ctrl+L shared contrast scale; Ctrl+0 fit view.
 """
 
 from __future__ import annotations
@@ -69,11 +70,11 @@ RUN_CONFIG: dict[str, Any] = {
     "day": None,      # <yymmdd> session folder prefix (or pass --day)
     "units": [],      # animal folder names of that session (or pass --units)
     "recordings": ["t1", "t2", "t3", "t4", "t5"],
-    "pixel_root": "pixel_data",
-    "roi_set_dir": "roi_sets/rebuilt",
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps,
+    # its rebuilt ROI sets and its channel_rectangle_params.json (read, and written by Save).
+    "cohort_file": None,
     "assignment": "none",  # channel-assignment table, or "none" for a cohort without one
-    "params": "outputs/channel_rectangle/params.json",
-    # Start from params.json when it exists (otherwise the defaults below).
+    # Start from the cohort's channel_rectangle_params.json when it exists (otherwise the defaults).
     "load_saved_params": True,
     "prefer_cli_args": True,
 }
@@ -104,11 +105,6 @@ class Recording:
     manifest_order: str  # gcamp_first | emo_first | "" (no label); derived for a verdict table, see below
     verdict: str        # cache meta channel_verdict
     level_region: str   # cache meta channel_level_region
-
-
-def resolve(path: str | Path) -> Path:
-    path = Path(path)
-    return path if path.is_absolute() else REPO_ROOT / path
 
 
 def manifest_order_from_verdict(row: pd.Series, odd: np.ndarray, even: np.ndarray) -> str:
@@ -147,7 +143,7 @@ def load_recordings(args: argparse.Namespace) -> list[Recording]:
     # "none": a cohort without an assignment table; the manifest column stays unassigned.
     no_manifest = args.assignment is None or str(args.assignment).lower() == "none"
     manifest = (pd.DataFrame(columns=["recording_key", "channel_order"]) if no_manifest else
-                pd.read_csv(resolve(args.assignment), dtype=str, keep_default_na=False))
+                pd.read_csv(Path(args.assignment), dtype=str, keep_default_na=False))
     manifest = manifest.set_index("recording_key", verify_integrity=True)
     is_verdict_schema = "channel_order" not in manifest.columns
     if is_verdict_schema and not {"verdict", "f_over_r_full_field"} <= set(manifest.columns):
@@ -156,7 +152,7 @@ def load_recordings(args: argparse.Namespace) -> list[Recording]:
     for unit in args.units:
         for name in args.recordings:
             key = f"{args.day}_{unit}/{name}"
-            folder = resolve(args.pixel_root) / f"{args.day}_{unit}" / name
+            folder = Path(args.pixel_root) / f"{args.day}_{unit}" / name
             # A labelled dump has pixels_meta_full.npz; a not-interleaved one only the
             # odd/even sidecar. Exactly one of the two must exist.
             labelled_path = folder / "pixels_meta_full.npz"
@@ -165,7 +161,7 @@ def load_recordings(args: argparse.Namespace) -> list[Recording]:
                 raise FileNotFoundError(f"{folder}: expected exactly one of {labelled_path.name} "
                                         f"and {odd_even_path.name}")
             meta = np.load(labelled_path if labelled_path.is_file() else odd_even_path)
-            roi_set_path = resolve(args.roi_set_dir) / f"{args.day}_{unit}_{name}.yaml"
+            roi_set_path = Path(args.roi_set_dir) / f"{args.day}_{unit}_{name}.yaml"
             roi_set = yaml.safe_load(roi_set_path.read_text(encoding="utf-8"))
             # The ROI set must be the one the cache was cropped around.
             for item in ("bregma_row", "bregma_col"):
@@ -522,11 +518,10 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser.add_argument("--day", default=defaults["day"])
     parser.add_argument("--units", nargs="+", default=defaults["units"])
     parser.add_argument("--recordings", nargs="+", default=defaults["recordings"])
-    parser.add_argument("--pixel-root", default=defaults["pixel_root"])
-    parser.add_argument("--roi-set-dir", default=defaults["roi_set_dir"])
+    parser.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                        help="The cohort file, <cohort folder>/cohort.yaml.")
     parser.add_argument("--assignment", default=defaults["assignment"],
                         help="channel_assignment CSV, or 'none' for a cohort without one.")
-    parser.add_argument("--params", default=defaults["params"])
     parser.add_argument("--no-load-saved-params", dest="load_saved_params", action="store_false",
                         default=defaults["load_saved_params"])
     return parser.parse_args()
@@ -535,12 +530,25 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+    for name, value in cohort_folders(args.cohort_file).items():
+        setattr(args, name, value)
+    return args
+
+
+def cohort_folders(cohort_file: str | None) -> dict[str, Path]:
+    """The dumps, the rebuilt ROI sets and the rectangle parameters file of the cohort
+    (raises "set cohort_file or pass --cohort" without one)."""
+    from wfci_gui.logic.cohort import load_script_cohort
+    layout = load_script_cohort(cohort_file).layout
+    return dict(pixel_root=layout.pixel_data, roi_set_dir=layout.rebuilt_roi_sets,
+                params=layout.channel_rectangle_params)
 
 
 def initial_params(args: argparse.Namespace) -> RectangleParams:
-    path = resolve(args.params)
+    path = Path(args.params)
     return load_params(path) if args.load_saved_params and path.is_file() else RectangleParams()
 
 
@@ -550,9 +558,9 @@ def main() -> int:
     app.setOrganizationName("wfci_gui")
     app.setApplicationName("ChannelRectangleViewer")
     recordings = load_recordings(args)
-    print(f"{len(recordings)} recordings of {args.day} from {resolve(args.pixel_root)}")
+    print(f"{len(recordings)} recordings of {args.day} from {args.pixel_root}")
     window = ViewerWindow(
-        recordings, initial_params(args), resolve(args.params),
+        recordings, initial_params(args), Path(args.params),
         QtCore.QSettings("wfci_gui", "ChannelRectangleViewer"),
         Path(QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppConfigLocation)),
     )

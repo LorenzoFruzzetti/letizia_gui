@@ -87,11 +87,28 @@ def test_gui_viewer_arguments_use_shared_recordings(tmp_path):
     assert rectangle_viewer_arguments(cohort, tables, "200101")[0] == []
     for unit, recordings in (("200101_M1", ("t1", "t2")), ("200101_M2", ("t1",))):
         for recording in recordings:
-            folder = cohort.path_of("pixel_root") / unit / recording
+            folder = cohort.layout.pixel_data / unit / recording
             folder.mkdir(parents=True)
             (folder / "pixels_meta_full.npz").write_bytes(b"x")
     arguments, note = rectangle_viewer_arguments(cohort, tables, "200101")
     assert arguments[arguments.index("--units") + 1:arguments.index("--recordings")] == ["M1", "M2"]
     assert arguments[arguments.index("--recordings") + 1] == "t1"
     assert arguments[arguments.index("--assignment") + 1] == "none"
+    assert arguments[arguments.index("--cohort") + 1] == str(path)
+    assert "--pixel-root" not in arguments and "--params" not in arguments
     assert "M1/t2" in note
+
+
+def test_rectangle_parameters_are_the_cohorts(tmp_path):
+    """M17: the global rectangle parameters live in the cohort folder; missing = defaults."""
+    from gui_cohort_tree import make_cohort
+    import qc_cohort
+    path = make_cohort(tmp_path)
+    params_path = rectangle.cohort_params_path(path)
+    assert params_path == path.parent / "channel_rectangle_params.json"
+    assert rectangle.params_or_default(params_path) == rectangle.RectangleParams()
+    saved = rectangle.RectangleParams(length_factor=1.0, width_factor=0.2, start_offset_factor=0.0,
+                                      statistic="median_level")
+    rectangle.save_params(params_path, saved)
+    assert rectangle.params_or_default(params_path) == saved
+    assert "channel_rectangle_params" not in qc_cohort.RUN_CONFIG     # no repository-relative default

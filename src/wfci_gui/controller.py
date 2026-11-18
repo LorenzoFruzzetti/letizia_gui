@@ -2,7 +2,7 @@
 
 Views call one method per user intent and redraw when ``changed`` is emitted. Jobs run
 one at a time as ``QProcess`` subprocesses; their output
-is streamed to the log dock and to ``<output_root>/logs/<job>_<timestamp>.log``.
+is streamed to the log dock and to ``<cohort folder>/outputs/logs/<job>_<timestamp>.log``.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from .logic.conda import (
     powershell_command, python_command,
 )
 from .logic.jobs import Job, JobQueue, append_history, log_file_name, read_history
+from .logic.layout import cohort_file_in
 from .logic.params import JOBS, build_job
 from .logic.presets import import_overrides
 from .logic.steps import (
@@ -98,12 +99,13 @@ class Controller(QtCore.QObject):
         self.state.dirty_tables = set()
         self.refresh_status()
 
-    def create_cohort(self, data: dict[str, Any], directory: Path) -> Path:
-        """Write a new cohort file with empty tables, then open it."""
+    def create_cohort(self, data: dict[str, Any], workspace: Path) -> Path:
+        """Write a new cohort folder (``<workspace>/<name>/cohort.yaml``) with empty tables,
+        then open it."""
         validate_cohort(data, data["name"])
-        path = Path(directory) / f"{data['name']}.yaml"
-        if path.exists():
-            raise FileExistsError(f"{path} already exists")
+        path = cohort_file_in(workspace, data["name"])
+        if path.parent.exists():
+            raise FileExistsError(f"{path.parent} already exists")
         cohort = Cohort(data, path)
         save_cohort(cohort)
         for kind in TABLE_KINDS:
@@ -146,7 +148,7 @@ class Controller(QtCore.QObject):
 
     def set_cohort_value(self, key: str, value: Any) -> None:
         def mutate(data):
-            if value is None and key not in ("link_root",):
+            if value is None:
                 data.pop(key, None)
             else:
                 data[key] = value
@@ -223,11 +225,18 @@ class Controller(QtCore.QObject):
 
     def history_path(self) -> Path:
         cohort = self.state.cohort
-        return (cohort.path_of("output_root") if cohort else self.config_dir) / "gui_jobs.jsonl"
+        return cohort.layout.job_history if cohort else self.config_dir / "gui_jobs.jsonl"
+
+    def work_dir(self) -> Path:
+        """Where jobs run: the cohort folder, else the settings folder; never the code folder (M8)."""
+        cohort = self.state.cohort
+        folder = cohort.layout.folder if cohort else self.config_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
 
     def logs_dir(self) -> Path:
         cohort = self.state.cohort
-        return (cohort.path_of("output_root") if cohort else self.config_dir) / "logs"
+        return cohort.layout.logs if cohort else self.config_dir / "logs"
 
     def history_notes(self) -> dict[str, str]:
         return history_notes(self.state.history)
@@ -255,16 +264,16 @@ class Controller(QtCore.QObject):
     def new_roi_editor_job(self) -> Job:
         """Step 3 with the new editor (python -m wfci_gui.roi_editor), settings from the cohort file."""
         cohort = self._require_cohort()
-        return self._plain_job("rois", NEW_ROI_EDITOR_KEY, "New ROI editor", python_command(
+        return self._plain_job("rois", NEW_ROI_EDITOR_KEY, "ROI editor", python_command(
             self.conda(), ["-m", "wfci_gui.roi_editor", "--cohort", str(cohort.path)]))
 
     def viewer_job(self, script: str, arguments: list[str], label: str, step: str = "qc") -> Job:
         """A study script run as is (QC viewers): its own flags, no overrides."""
         return self._plain_job(step, Path(script).stem, label,
-                               python_command(self.conda(), [script, *arguments]))
+                               python_command(self.conda(), [str(self.repo / script), *arguments]))
 
     def _plain_job(self, step: str, key: str, label: str, command: list[str]) -> Job:
-        return Job(step=step, key=key, label=label, command=command, cwd=self.repo,
+        return Job(step=step, key=key, label=label, command=command, cwd=self.work_dir(),
                    log_path=self.logs_dir() / log_file_name(key), history_path=self.history_path())
 
     def enqueue(self, job: Job) -> None:
@@ -298,10 +307,10 @@ class Controller(QtCore.QObject):
     def launch_detached(self, script: str, arguments: list[str]) -> None:
         """Start an interactive viewer outside the queue (it can stay open while jobs run)."""
         process = QtCore.QProcess(self)
-        command = python_command(self.conda(), [script, *arguments])
+        command = python_command(self.conda(), [str(self.repo / script), *arguments])
         process.setProgram(command[0])
         process.setArguments(command[1:])
-        process.setWorkingDirectory(str(self.repo))
+        process.setWorkingDirectory(str(self.work_dir()))
         process.setProcessEnvironment(self._process_environment({}))
         process.startDetached()
         self.log_line.emit(f"[gui] opened {script} {' '.join(arguments)}")
@@ -383,7 +392,7 @@ class Controller(QtCore.QObject):
 
     def _after(self, job: Job) -> None:
         """Step 3: when the ROI editor closes, rebuild this cohort's new sets, then pre-flight."""
-        if job.key not in ("roi_select", NEW_ROI_EDITOR_KEY) or job.exit_code != 0 \
+        if job.key != NEW_ROI_EDITOR_KEY or job.exit_code != 0 \
                 or self.state.cohort is None:
             return
         if self.has_new_reviewed_sets():
@@ -398,8 +407,8 @@ class Controller(QtCore.QObject):
         cohort = self.state.cohort
         if cohort is None:
             return False
-        reviewed = cohort.path_of("reviewed_roi_set_dir")
-        rebuilt = cohort.path_of("roi_set_dir")
+        reviewed = cohort.layout.reviewed_roi_sets
+        rebuilt = cohort.layout.rebuilt_roi_sets
         for row in used_recordings(self.state.tables).itertuples():
             name = f"{row.day}_{row.animal}_{row.recording}.yaml"
             source, target = reviewed / name, rebuilt / name
@@ -411,7 +420,7 @@ class Controller(QtCore.QObject):
         return JOBS[job]
 
 
-# Job key of the new ROI editor; when it closes, step 3 rebuilds and pre-flights as for the old one.
+# Job key of the ROI editor; when it closes, step 3 rebuilds and pre-flights.
 NEW_ROI_EDITOR_KEY = "roi_editor_new"
 
 

@@ -1,6 +1,6 @@
 """Per-animal stack of the ROI-union raw-F traces, one row per timepoint, shared y-scale.
 
-For every animal in the design CSV (excluded timepoints left out) draw one figure with
+For every animal in the cohort's design.csv (excluded timepoints left out) draw one figure with
 one row per timepoint, sorted by ``days_since_day1``. Each row is the raw-F panel of that
 day's ``<day>_<animal>\\plots_roi_union\\channel_traces.png``: t1..t5 joined end to end,
 per-frame ROI-union mean of each channel, faint full rate + bold 1 s moving mean.
@@ -13,21 +13,21 @@ Memory: each recording's volumes are memory-mapped, reduced to 1-D traces, drawn
 released before the next one. The y-limits are applied to every row after all rows are
 drawn. Every expected t1..t5 cache must exist; anything missing raises.
 
-Output: ``<pixel_root>\\plots_roi_union_by_animal\\<animal>.png`` plus one CSV,
+Output (``--cohort``: its pixel data, design.csv and frame rate):
+``<pixel data>\\plots_roi_union_by_animal\\<animal>.png`` plus one CSV,
 ``p99_minus_p1_by_recording.csv``, with one row per drawn line (animal x timepoint x
 recording x line): mean, SD, P1, P99 and P99-P1 of the full-rate trace in raw counts.
 ``identity`` is gcamp/emo as plotted, or ``undecided`` for not_interleaved (odd/even)
 recordings. With --select, only the selected animals' rows are replaced in the CSV.
 
-    python plot_channel_traces_by_animal.py
-    python plot_channel_traces_by_animal.py --no-plots   # CSV only
+    python plot_channel_traces_by_animal.py --cohort <cohort folder>/cohort.yaml
+    python plot_channel_traces_by_animal.py --cohort <...>/cohort.yaml --no-plots   # CSV only
 
 Cohorts whose days do not all have t1..t5: ``--recordings-from-design`` takes each
 day's recordings from the design CSV instead of a fixed t1..t5; every listed recording must
 still have its cache, and a day missing one the animal has on other days says so in its label.
 
-    python plot_channel_traces_by_animal.py --pixel-root pixel_data ^
-        --design-csv pixel_data\\experimental_design.csv --recordings-from-design
+    python plot_channel_traces_by_animal.py --cohort <...>/cohort.yaml --recordings-from-design
 """
 from __future__ import annotations
 
@@ -46,16 +46,15 @@ import numpy as np
 from plot_channel_traces import (CHANNELS, COLORS, INK, META_NAME, MUTED, NAMES, NEEDS_DECISION,
                                  moving_mean, roi_union_traces)
 
-REPO_ROOT = Path(__file__).resolve().parent
 RUN_CONFIG = {
-    "pixel_root": REPO_ROOT / "pixel_data",
-    "design_csv": REPO_ROOT / "pixel_data" / "experimental_design.csv",
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps,
+    # its design.csv and its frame rate.
+    "cohort_file": None,
     "out_dir": "plots_roi_union_by_animal",
     "stats_csv": "p99_minus_p1_by_recording.csv",
     "exclude_timepoints": ("BL2",),
     "recordings": ("t1", "t2", "t3", "t4", "t5"),
-    # Per-channel frame rate of the dumps, and the moving-mean window.
-    "sampling_rate_hz": 25.0,
+    # Moving-mean window.
     "smooth_s": 1.0,
 }
 SHORT = {"gcamp": "GCaMP", "emo": "emo", "odd": "odd", "even": "even"}
@@ -268,8 +267,8 @@ def write_stats(path: Path, rows: list[dict[str, object]], replaced: set[str]) -
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--pixel-root", type=Path, default=RUN_CONFIG["pixel_root"])
-    p.add_argument("--design-csv", type=Path, default=RUN_CONFIG["design_csv"])
+    p.add_argument("--cohort", dest="cohort_file", default=RUN_CONFIG["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--out-dir", default=RUN_CONFIG["out_dir"])
     p.add_argument("--stats-csv", default=RUN_CONFIG["stats_csv"], help="File name inside --out-dir.")
     p.add_argument("--no-plots", action="store_true", help="Only write the stats CSV.")
@@ -277,11 +276,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--recordings", nargs="*", default=list(RUN_CONFIG["recordings"]))
     p.add_argument("--recordings-from-design", action="store_true",
                    help="Draw each day's recordings as listed in the design CSV (ignores --recordings).")
-    p.add_argument("--sampling-rate-hz", type=float, default=RUN_CONFIG["sampling_rate_hz"])
     p.add_argument("--smooth-s", type=float, default=RUN_CONFIG["smooth_s"])
     p.add_argument("--select", nargs="*", default=None, help="Animals, e.g. A1.")
     args = p.parse_args()
     args.recordings = tuple(args.recordings)
+    # The dumps, the design table and the frame rate come from the cohort file.
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.design_csv = cohort.layout.design_csv
+    args.sampling_rate_hz = float(acquisition_value(cohort, "sampling_rate_hz"))
     return args
 
 

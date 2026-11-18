@@ -212,7 +212,7 @@ def test_open_manifest_asks_for_settings_loads_and_goes_to_recent(empty, tmp_pat
     asked = []
     monkeypatch.setattr(empty, "ask_settings", lambda values, need_folder, note: asked.append(note) or settings)
     empty.controller.open_manifest(str(manifest))
-    assert asked and "No cohort file names" in asked[0]           # no cohort names it
+    assert asked and "is not in a cohort folder" in asked[0]      # no cohort.yaml next to it
     assert empty.stack.currentIndex() == 1
     assert table_column(empty, "key") == ["200711_A_t0", "200711_A_t1", "200711_B_t0"]
     assert table_column(empty, "manifest") == ["odd"] * 3

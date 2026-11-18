@@ -1,7 +1,13 @@
-"""One group: does connectivity change after day 1? Statistics on the detrended variant.
+"""One set of animals: does connectivity change after the baseline? Statistics on the detrended variant.
 
 Input: per-recording Pearson R of `variant` (default the 20 s running-median baseline
-dF/F) from outputs/roi_pixel_connectivity.
+dF/F) from the cohort's outputs/roi_pixel_connectivity, and its design.csv.
+
+What is analysed is chosen per run, never by editing this script (any cohort works as it
+is): the baseline timepoint, the included timepoints, the animals, the variant and the
+region focus come from flags, else from CONNECTIVITY_STATS_* environment variables, else
+from RUN_CONFIG (see `choice`). The folders come from the cohort file (--cohort).
+Excluded recordings are the cohort file's `exclusions:`.
 
 Time axis (`time_axis`, env CONNECTIVITY_STATS_TIME_AXIS):
     "timepoint" (default): sessions are grouped by the `timepoint` class of
@@ -28,11 +34,12 @@ Tests, each for time point d vs baseline and for "post" = mean of the later poin
         and decrease separately) -> nbs_components.csv, all_to_all_change_nbs.png/.svg and
         <focus>_to_all_change_nbs.png/.svg (dot = edge of a significant component)
 
-Region focus (env CONNECTIVITY_STATS_FOCUS, "SSp" default or "motor"): the same tests on the region's
+Region focus (--focus / env CONNECTIVITY_STATS_FOCUS, "SSp" default or "motor"): the same tests on the region's
 own edges and its edges to every other region (motor also split by its hemisphere),
 written as <focus>_*.csv/.png next to the files below.
 
-Output (<output_root>/<variant>_<animals tag>_<range tag>/, e.g. _no_A3_BL-30D):
+Output (<cohort folder>/outputs/connectivity_stats/<variant>_<animals tag>_<range tag>/,
+e.g. _no_A3_BL-30D; the tag is all_animals when every animal of the design is included):
     session_values.csv, metric_tests.csv, node_tests.csv, edge_tests.csv,
     metrics_by_day.png, node_strength_change.png, edge_tests.png/.svg (z, t and r change),
     mean_matrices.png/.svg and mean_matrices_uncentered.png/.svg (parula, row min/max),
@@ -41,11 +48,17 @@ Output (<output_root>/<variant>_<animals tag>_<range tag>/, e.g. _no_A3_BL-30D):
     motor_x_regions_combined_change_r.png/.svg and motor_x_regions_combined_tests.csv,
     metrics_by_day_relative_r.png/.svg (mean +- SD across animals, relative and absolute r)
 
-Run: conda run --no-capture-output -n wfci_gui python connectivity_stats.py
+Run (C is <cohort folder>/cohort.yaml):
+    conda run --no-capture-output -n wfci_gui python connectivity_stats.py --cohort C
+    ... connectivity_stats.py --cohort C --baseline BL --timepoints BL 3D 15D --animals A1 A2 A3 \
+        --variant pixels_median_dff_20s_full_gsr --focus motor
+Environment variables instead of flags: CONNECTIVITY_STATS_COHORT_FILE, _BASELINE, _TIMEPOINTS
+and _ANIMALS (comma-separated lists), _VARIANT, _FOCUS. The GUI runs it through
+run_with_overrides.py (module-level parameters as --set name=value, flags after --).
 """
 
+import argparse
 import os
-from pathlib import Path
 
 import matplotlib
 
@@ -59,40 +72,64 @@ from statsmodels.stats.multitest import multipletests
 
 from nbs import nbs
 from parula_colormap import parula
+from wfci_gui.logic.cohort import load_script_cohort
+
+# ---------------------------------------------------------------- what to analyse
+# Edit this section to run from the editor without flags or environment variables.
+RUN_CONFIG = {
+    "cohort_file": None,      # <cohort folder>/cohort.yaml (or pass --cohort)
+    "baseline": None,         # baseline timepoint; None = the first included timepoint
+    "timepoints": None,       # included timepoint classes; None = every timepoint of the cohort
+    "animals": None,          # included animals; None = every animal of the design
+    # 20 s running-median baseline dF/F, no GSR; any other roi_pixel_connectivity folder
+    # (e.g. pixels_median_dff_20s_full_gsr) reruns everything on that variant.
+    "variant": "pixels_median_dff_20s_full",
+    "focus": "SSp",           # region focus: "SSp" or "motor"
+}
+_parser = argparse.ArgumentParser(description="Connectivity statistics of one cohort over time.")
+_parser.add_argument("--cohort", dest="cohort_file", default=None,
+                     help="The cohort file, <cohort folder>/cohort.yaml.")
+_parser.add_argument("--baseline", default=None, help="Baseline timepoint (default: the first included).")
+_parser.add_argument("--timepoints", nargs="*", default=None, help="Included timepoints (default: all).")
+_parser.add_argument("--animals", nargs="*", default=None, help="Included animals (default: all).")
+_parser.add_argument("--variant", default=None, help="roi_pixel_connectivity variant folder.")
+_parser.add_argument("--focus", default=None, help="Region focus: SSp or motor.")
+_cli = _parser.parse_args()
+
+
+def choice(name, is_list=False):
+    """One run choice: its flag when given, else env CONNECTIVITY_STATS_<NAME> (a list is
+    comma-separated), else RUN_CONFIG."""
+    value = getattr(_cli, name)
+    if value is not None:
+        return value
+    env_value = os.environ.get(f"CONNECTIVITY_STATS_{name.upper()}", "").strip()
+    if env_value:
+        return [item.strip() for item in env_value.split(",") if item.strip()] if is_list else env_value
+    return RUN_CONFIG[name]
+
+
+# Every folder comes from the cohort file; a run without one stops here.
+cohort = load_script_cohort(choice("cohort_file"))
+design_path = cohort.layout.design_csv
+connectivity_root = cohort.layout.connectivity
+output_root = cohort.layout.connectivity_stats
+exclude_recordings = sorted(cohort.excluded_keys())  # "<day>_<animal>/<t#>" keys
+included_timepoints = list(choice("timepoints", is_list=True) or cohort.timepoints)
+baseline_timepoint = choice("baseline") or included_timepoints[0]
+if baseline_timepoint not in included_timepoints:
+    raise ValueError(f"the baseline {baseline_timepoint!r} is not one of the included timepoints "
+                     f"{included_timepoints}")
+timepoints = [baseline_timepoint] + [t for t in included_timepoints if t != baseline_timepoint]  # first = baseline
+include_animals = choice("animals", is_list=True) or None   # None = every animal of the design
+variant = choice("variant")
+focus_prefix = choice("focus")
 
 # ---------------------------------------------------------------- parameters
-repo_root = Path(__file__).resolve().parent
 connectivity_file = "roi_pixel_connectivity.npz"   # per recording: R_roi, roi_labels
-
-# A COHORT is the (design table, connectivity root, group, animals, timepoints) bundle
-# this analysis runs on, picked with env CONNECTIVITY_STATS_COHORT. Every other parameter below is
-# shared, so the tests, figures and file names are the same for every cohort.
-#   "default": a placeholder entry with neutral paths and no exclusions.
-cohort = os.environ.get("CONNECTIVITY_STATS_COHORT", "default")
-include_animals = None                   # None = every animal of `group`
 exclude_days = []                        # session days dropped before anything else
-default_variant = "pixels_median_dff_20s_full"
 default_time_axis = "timepoint"
 default_relative_mode = None             # None: ratio without GSR, difference with GSR
-if cohort == "default":
-    design_path = repo_root / "experimental_design.csv"
-    connectivity_root = repo_root / "outputs" / "roi_pixel_connectivity"
-    output_root = repo_root / "outputs" / "connectivity_stats"
-    # Group label of the analysed animals in the design table's `group` column.
-    group = "NA"
-    exclude_animals = []
-    timepoints = ["BL", "3D", "15D", "30D"]  # first = baseline
-    exclude_recordings = []                  # "<day>_<animal>/<t#>" keys
-else:
-    raise ValueError(f"CONNECTIVITY_STATS_COHORT must be 'default', not {cohort!r}")
-
-# env CONNECTIVITY_STATS_OUTPUT_ROOT puts this run's output folder somewhere else (e.g. a separate
-# comparison) without touching the cohort's usual one.
-output_root = Path(os.environ.get("CONNECTIVITY_STATS_OUTPUT_ROOT", output_root))
-
-# 20 s running-median baseline dF/F, no GSR; set CONNECTIVITY_STATS_VARIANT=pixels_median_dff_20s_full_gsr
-# (or any other roi_pixel_connectivity folder) to rerun everything on another variant.
-variant = os.environ.get("CONNECTIVITY_STATS_VARIANT", default_variant)
 # "timepoint": compare the timepoint classes (BL, 3D, ...); "day_index": the session number.
 time_axis = os.environ.get("CONNECTIVITY_STATS_TIME_AXIS", default_time_axis)
 baseline_day_index = 1                   # time_axis "day_index" only
@@ -142,21 +179,11 @@ later_days = days[1:]
 contrast_of = {day: day_label[day] for day in later_days}   # contrast name of a later point
 day_of_contrast = {name: day for day, name in contrast_of.items()}
 contrasts = list(contrast_of.values()) + ["post"]   # each vs baseline
-if include_animals is not None:
-    animals_tag = "_".join(include_animals)
-elif exclude_animals:
-    animals_tag = f"no_{'_'.join(exclude_animals)}"
-else:
-    animals_tag = "all_animals"          # nothing excluded
-output_dir = output_root / f"{variant}_{animals_tag}_{range_tag}"
-output_dir.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------- loading
 # keep_default_na=False: a group may be the literal string "NA" (no group
-# assigned yet), which pandas would otherwise read as NaN -- the
-# `group ==` filter below would then match nothing and the design would come out empty.
-# Nothing here depends on a CSV cell being NaN rather than "" (the two notna() calls
-# downstream are on computed columns).
+# assigned yet), which pandas would otherwise read as NaN. Nothing here depends on a CSV
+# cell being NaN rather than "" (the two notna() calls downstream are on computed columns).
 design = pd.read_csv(design_path, dtype={"day": str}, keep_default_na=False)
 design["session"] = design["day"] + "_" + design["animal"]
 design["recording_key"] = design["session"] + "/" + design["recording"]
@@ -164,11 +191,15 @@ if time_axis == "timepoint":
     # day_index becomes the timepoint's position in `timepoints`; other classes (and R/T
     # rows, whose timepoint is blank) map to NaN and are dropped by the filter below.
     design["day_index"] = design["timepoint"].map({label: day for day, label in day_label.items()})
+# Animals left out of the run name the output folder ("no_<animals>"; "all_animals" when none).
+left_out_animals = (sorted(set(design["animal"]) - set(include_animals))
+                    if include_animals is not None else [])
 if include_animals is not None:
+    unknown_animals = sorted(set(include_animals) - set(design["animal"]))
+    if unknown_animals:
+        raise ValueError(f"animals not in {design_path.name}: {unknown_animals}")
     design = design[design["animal"].isin(include_animals)]
-design = design[(design["group"] == group)
-                & ~design["animal"].isin(exclude_animals)
-                & ~design["day"].isin(exclude_days)
+design = design[~design["day"].isin(exclude_days)
                 & ~design["recording_key"].isin(exclude_recordings)
                 & design["day_index"].isin(days)].reset_index(drop=True)
 design["day_index"] = design["day_index"].astype(int)
@@ -182,6 +213,9 @@ missing = [(a, d) for a in animals for d in days
            if not ((design["animal"] == a) & (design["day_index"] == d)).any()]
 if missing:
     raise ValueError(f"incomplete design (animal, day) missing: {missing}")
+animals_tag = f"no_{'_'.join(left_out_animals)}" if left_out_animals else "all_animals"
+output_dir = output_root / f"{variant}_{animals_tag}_{range_tag}"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # recording_z: (n_recordings, n_rois, n_rois) Fisher z of R, diagonal set to 0.
 roi_labels = None
@@ -591,15 +625,14 @@ for scale in ("centered", "uncentered", "fixed", "per_panel"):
 print(f"saved {output_dir}")
 
 # ================================================================ region focus
-# Same tests restricted to one region's ROIs (`focus_prefix`, env CONNECTIVITY_STATS_FOCUS: "SSp"
+# Same tests restricted to one region's ROIs (`focus_prefix`, --focus / CONNECTIVITY_STATS_FOCUS: "SSp"
 # somatosensory, default, or "motor" MOs + MOp). Edge families are smaller here, so
 # Benjamini-Hochberg runs over the focus edges only:
 #     within: edges between two focus ROIs; to_all: every edge with a focus ROI.
 # Output files are prefixed with the focus name, so both foci share one output folder.
 region_prefixes = {"SSp": ("SSp",), "motor": ("MOs", "MOp"), "RSP": ("RSP",), "visual": ("VIS",)}
-focus_prefix = os.environ.get("CONNECTIVITY_STATS_FOCUS", "SSp")
 if focus_prefix not in ("SSp", "motor"):
-    raise ValueError(f"CONNECTIVITY_STATS_FOCUS must be 'SSp' or 'motor', not {focus_prefix!r}")
+    raise ValueError(f"the region focus must be 'SSp' or 'motor', not {focus_prefix!r}")
 other_region_prefixes = {region: prefixes for region, prefixes in region_prefixes.items() if region != focus_prefix}
 # True: also split each focus-to-region metric by the focus ROI's hemisphere (_L_to_ / _R_to_).
 focus_split_by_side = focus_prefix == "motor"

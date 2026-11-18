@@ -2,11 +2,11 @@
 
 Pages
 -----
-* a cohort file: its manifest (``manifest:``) when that file exists, else the folder scan
-  of ``link_root`` / ``raw_root``; settings from the cohort;
+* a cohort file: its manifest (``manifest.csv`` in the cohort folder) when that file
+  exists, else the folder scan of its junction view (``links``); settings from the cohort;
 * a manifest: one page per recording in ``recording_paths``, key ``<day>_<animal>_<t#>``
-  from the row, group and ``channel_order`` per row; settings from the cohort whose
-  ``manifest:`` names this file (``cohort_for_manifest``), else the caller asks the user;
+  from the row, group and ``channel_order`` per row; settings from the ``cohort.yaml`` in
+  the manifest's folder (``cohort_for_manifest``), else the caller asks the user;
 * a folder (Settings dialog): every subfolder holding at least two images.
 
 Every page is seeded exactly as in the old editor (``roi_editor._seed_layout``: its own
@@ -15,8 +15,8 @@ seeded from its own set also takes that set's ``channel_rectangle``. Pages are o
 animal -> day -> t#. A page whose recording folder is missing (raw drive not mounted) is
 kept when it has a cached image, else left out (and listed in ``LoadedData.notes``).
 
-Images (``<roi_set_dir>/alignment_images``)
--------------------------------------------
+Images (``EditorSettings.cache_dir``: a cohort's ``roi_sets/alignment_images``)
+------------------------------------------------------------------------------
 ``<key>_odd.tif`` / ``<key>_even.tif``: float32, 128 grid, the mean of the first
 *frames per parity* odd (even) frames after ``rot90_k`` and two 0.5x box downsamples;
 ``<key>_odd_even.json`` records the settings they were made with, and a cache whose
@@ -41,7 +41,7 @@ from typing import Any
 
 import numpy as np
 
-from .logic import EDITOR_DEFAULTS, REPO_ROOT, EditorSettings, resolve_settings
+from .logic import EDITOR_DEFAULTS, EditorSettings, resolve_settings
 from .model import PageModel
 
 from channel_rectangle import parity_of_order, read_roi_set_channel_order, read_roi_set_rectangle  # noqa: E402
@@ -81,7 +81,8 @@ def editor_args(settings: EditorSettings) -> argparse.Namespace:
         **EDITOR_DEFAULTS, folder=list(settings.folder), pattern=settings.pattern,
         frame_order=settings.frame_order, rot90_k=settings.rot90_k, roi_set_dir=settings.roi_set_dir,
         roi_seed_dir=settings.roi_seed_dir, start_from=settings.start_from,
-        frames_per_parity=settings.frames_per_parity, manifest=None)
+        frames_per_parity=settings.frames_per_parity, manifest=None,
+        channel_rectangle_params=settings.rectangle_params)
     if args.lambda_offset < MIN_LAMBDA_OFFSET:
         raise ValueError(f"lambda_offset={args.lambda_offset} is below the minimum {MIN_LAMBDA_OFFSET} px")
     if args.roi_seed_dir and not Path(args.roi_seed_dir).is_dir():
@@ -163,24 +164,12 @@ def manifest_recordings(path: str | Path) -> list[dict[str, Any]]:
     return recordings
 
 
-def cohort_for_manifest(manifest: str | Path, cohort_dir: str | Path = REPO_ROOT / "cohorts") -> Path | None:
-    """The cohort file whose ``manifest:`` is this file; None when no cohort names it.
-
-    Two cohorts naming the same manifest is ambiguous and raises.
-    """
-    import yaml
-    from wfci_gui.logic.cohort import resolve_path
-    target = Path(manifest).resolve()
-    matches = []
-    for path in sorted(Path(cohort_dir).glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        value = data.get("manifest") if isinstance(data, dict) else None
-        if value and resolve_path(value).resolve() == target:
-            matches.append(path)
-    if len(matches) > 1:
-        raise ValueError(f"{Path(manifest).name} is named by {len(matches)} cohort files "
-                         f"({', '.join(p.name for p in matches)}): ambiguous, open one of them instead")
-    return matches[0] if matches else None
+def cohort_for_manifest(manifest: str | Path) -> Path | None:
+    """The cohort of a manifest: the ``cohort.yaml`` in the manifest's own folder (a
+    cohort folder holds both). None when that folder holds no cohort file."""
+    from wfci_gui.logic.layout import COHORT_FILE_NAME
+    candidate = Path(manifest).resolve().parent / COHORT_FILE_NAME
+    return candidate if candidate.is_file() else None
 
 
 def pages_from_manifest(manifest: str | Path, settings: EditorSettings) -> tuple[list[PageModel], Any, str, bool, list[str]]:
@@ -235,7 +224,7 @@ def pages_from_folders(settings: EditorSettings, cohort: str | None = None
             raise FileNotFoundError(
                 f"No folder holding at least 2 {args.pattern!r} images found at or below {empty} "
                 f"(is the raw drive mounted?), and no cached image of this cohort in "
-                f"{Path(args.roi_set_dir) / CACHE_FOLDER}.")
+                f"{settings.cache_dir}.")
         pages.sort(key=page_order)
         return pages, args, profile.name, True, []
     if empty:
@@ -255,12 +244,12 @@ def load_cohort(cohort: str | Path, flags: dict[str, Any] | None = None) -> Load
     cohort = str(cohort)
     settings = resolve_settings(cohort, dict(flags or {}))
     data = read_cohort(cohort)
-    manifest = data.path_of("manifest")
-    if manifest is not None and manifest.is_file():
+    manifest = data.layout.manifest
+    if manifest.is_file():
         pages, args, profile, preview_only, notes = pages_from_manifest(manifest, settings)
     else:
         pages, args, profile, preview_only, notes = pages_from_folders(settings, cohort)
-    return LoadedData(pages, args, profile, settings, "cohort", cohort, cohort, data.path_of("pixel_root"),
+    return LoadedData(pages, args, profile, settings, "cohort", cohort, cohort, data.layout.pixel_data,
                       preview_only, notes)
 
 
@@ -279,7 +268,7 @@ def load_manifest(manifest: str | Path, settings: EditorSettings, cohort: str | 
     pixel_root = None
     if cohort:
         from wfci_gui.logic.cohort import load_cohort as read_cohort
-        pixel_root = read_cohort(cohort).path_of("pixel_root")
+        pixel_root = read_cohort(cohort).layout.pixel_data
     return LoadedData(pages, args, profile, settings, "manifest", str(manifest), cohort, pixel_root,
                       preview_only, notes)
 
@@ -298,8 +287,9 @@ def push_recent(entries: list[tuple[str, str]], kind: str, path: str, limit: int
 
 
 # ----------------------------------------------------------------------------- images
-def cache_paths(roi_set_dir: str | Path, key: str) -> dict[str, Path]:
-    folder = Path(roi_set_dir) / CACHE_FOLDER
+def cache_paths(cache_dir: str | Path, key: str) -> dict[str, Path]:
+    """The cached pair of one page, in ``cache_dir`` (``EditorSettings.cache_dir``)."""
+    folder = Path(cache_dir)
     return {"odd": folder / f"{key}_odd.tif", "even": folder / f"{key}_even.tif",
             "sidecar": folder / f"{key}_odd_even.json", "legacy": folder / f"{key}.tif"}
 
@@ -313,7 +303,7 @@ def cache_meta(settings: EditorSettings) -> dict[str, Any]:
 def read_cache(settings: EditorSettings, key: str) -> tuple[np.ndarray, np.ndarray] | None:
     """The cached (odd, even) 128 images; None when missing or made with other settings."""
     import tifffile
-    paths = cache_paths(settings.roi_set_dir, key)
+    paths = cache_paths(settings.cache_dir, key)
     if not all(paths[name].is_file() for name in ("odd", "even", "sidecar")):
         return None
     if json.loads(paths["sidecar"].read_text(encoding="utf-8")) != cache_meta(settings):
@@ -326,15 +316,15 @@ def cache_kind(settings: EditorSettings, key: str) -> str | None:
     """'cache' (a valid pair), 'legacy' (only the old <key>.tif) or None."""
     if read_cache(settings, key) is not None:
         return "cache"
-    return "legacy" if cache_paths(settings.roi_set_dir, key)["legacy"].is_file() else None
+    return "legacy" if cache_paths(settings.cache_dir, key)["legacy"].is_file() else None
 
 
-def write_cache(roi_set_dir: str | Path, key: str, odd: np.ndarray, even: np.ndarray,
+def write_cache(cache_dir: str | Path, key: str, odd: np.ndarray, even: np.ndarray,
                 meta: dict[str, Any]) -> None:
     """Write the pair, then the sidecar (its presence means both images are complete).
     Each through ``.partial`` + rename, so an interrupted write leaves nothing usable."""
     import tifffile
-    paths = cache_paths(roi_set_dir, key)
+    paths = cache_paths(cache_dir, key)
     paths["odd"].parent.mkdir(parents=True, exist_ok=True)
     for name, image in (("odd", odd), ("even", even)):
         partial = paths[name].with_suffix(".tif.partial")
@@ -370,10 +360,10 @@ def load_images(page: PageModel, settings: EditorSettings) -> None:
         page.odd_even_128 = (to_128(odd_256), to_128(even_256))
         page.image_source = "raw"
         if read_cache(settings, page.key) is None:
-            write_cache(settings.roi_set_dir, page.key, *page.odd_even_128, cache_meta(settings))
+            write_cache(settings.cache_dir, page.key, *page.odd_even_128, cache_meta(settings))
     else:
         cached = read_cache(settings, page.key)
-        legacy = cache_paths(settings.roi_set_dir, page.key)["legacy"]
+        legacy = cache_paths(settings.cache_dir, page.key)["legacy"]
         if cached is not None:
             page.odd_even_128 = cached
             page.image_source = "cache"
@@ -393,7 +383,7 @@ def cache_page(key: str, folder: str, settings: EditorSettings) -> str:
     if not has_frames(folder, settings.pattern):
         return "no recording folder"
     odd_256, even_256 = read_raw(folder, settings)
-    write_cache(settings.roi_set_dir, key, to_128(odd_256), to_128(even_256), cache_meta(settings))
+    write_cache(settings.cache_dir, key, to_128(odd_256), to_128(even_256), cache_meta(settings))
     return "cached"
 
 

@@ -11,17 +11,19 @@ from qtkit.qt import QtCore, QtGui, QtWidgets
 from . import __version__
 from .controller import Controller
 from .logic import REPO_ROOT
+from .logic.layout import cohort_file_in, cohort_files
 from .logic.presets import export_overrides
 from .logic.steps import STEPS
+from .logic.workspace import WORKSPACE_KEY, workspace_from_setting, workspace_problem
 from .views.pages import PAGE_CLASSES
 from .views.widgets import LogDock
 
-COHORT_DIR = REPO_ROOT / "cohorts"
 MAX_RECENT = 10
 
 ACTIONS = (
     ActionSpec("cohort.new", "New cohort…", "Ctrl+N", "new_cohort", "SP_FileIcon"),
     ActionSpec("cohort.open", "Open cohort…", "Ctrl+O", "open_cohort_dialog", "SP_DirOpenIcon"),
+    ActionSpec("cohort.workspace", "Choose workspace…", "", "choose_workspace", "SP_DirHomeIcon"),
     ActionSpec("cohort.save", "Save cohort", "Ctrl+S", "save_cohort", "SP_DialogSaveButton"),
     ActionSpec("cohort.revert", "Revert unsaved changes", "", "revert_cohort", "SP_DialogResetButton"),
     ActionSpec("cohort.export", "Export all parameters…", "", "export_parameters", "SP_ArrowUp"),
@@ -41,7 +43,7 @@ ACTIONS = (
 DEFAULT_LAYOUT = {
     "menus": {
         "File": ["cohort.save", "cohort.revert", "-", "cohort.export", "cohort.import", "-", "app.quit"],
-        "Cohort": ["cohort.new", "cohort.open"],
+        "Cohort": ["cohort.new", "cohort.open", "-", "cohort.workspace"],
         "Run": ["run.step", "run.stop", "-", "run.refresh", "run.open_folder"],
         "Help": ["app.shortcuts", "app.toolbar", "app.reset_commands", "-", "app.open_config", "app.about"],
     },
@@ -55,6 +57,7 @@ class MainWindow(ShellWindow):
         super().__init__(settings, config_dir)
         self.setWindowTitle("WFCI cohort pipeline")
         self.resize(1400, 900)
+        self.environ = environ
         self.controller = Controller(Path(config_dir), REPO_ROOT, environ)
         self.current_step = "setup"
         self.install_commands(ACTIONS, DEFAULT_LAYOUT, self)
@@ -129,6 +132,34 @@ class MainWindow(ShellWindow):
         self.statusBar().showMessage(message, 10000)
         self.controller.log_line.emit(f"[gui] {message}")
 
+    # ----- workspace ------------------------------------------------------------------
+    @property
+    def workspace(self) -> Path:
+        r"""The folder of the cohort folders (Windows user settings; default Documents\WFCI)."""
+        return workspace_from_setting(self.settings.value(WORKSPACE_KEY), self.environ)
+
+    def has_workspace(self) -> bool:
+        return bool(self.settings.value(WORKSPACE_KEY))
+
+    def set_workspace(self, path: Path) -> None:
+        """Use ``path`` as the workspace (created when missing); raises when it cannot be one."""
+        problem = workspace_problem(path)
+        if problem:
+            raise ValueError(problem)
+        Path(path).mkdir(parents=True, exist_ok=True)
+        self.settings.setValue(WORKSPACE_KEY, str(Path(path).resolve()))
+        self.settings.sync()
+        self.refresh()
+
+    def choose_workspace(self, first: bool = False) -> bool:
+        """Ask for the workspace; False when the user cancelled."""
+        dialog = WorkspaceDialog(self, self.workspace, first)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return False
+        self.set_workspace(dialog.path())
+        self.notify(f"Workspace: {self.workspace}")
+        return True
+
     # ----- state -> view --------------------------------------------------------------
     def progress(self, state):
         notes = self.controller.history_notes()
@@ -160,8 +191,7 @@ class MainWindow(ShellWindow):
 
     def _fill_combo(self) -> None:
         cohort = self.controller.state.cohort
-        files = sorted(COHORT_DIR.glob("*.yaml")) if COHORT_DIR.is_dir() else []
-        items = [str(p.stem) for p in files]
+        items = [p.parent.name for p in cohort_files(self.workspace)]
         current = cohort.name if cohort else ""
         if [self.cohort_combo.itemText(i) for i in range(self.cohort_combo.count())] != ["", *items]:
             self.cohort_combo.clear()
@@ -172,7 +202,7 @@ class MainWindow(ShellWindow):
     def _combo_activated(self, name: str) -> None:
         cohort = self.controller.state.cohort
         if name and (cohort is None or cohort.name != name):
-            self.open_cohort(COHORT_DIR / f"{name}.yaml")
+            self.open_cohort(cohort_file_in(self.workspace, name))
 
     def recent_cohorts(self) -> list[Path]:
         values = self.settings.value("recent", []) or []
@@ -207,7 +237,7 @@ class MainWindow(ShellWindow):
             self.current_step = "scan"
 
     def open_cohort_dialog(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open cohort", str(COHORT_DIR), "Cohort files (*.yaml)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open cohort", str(self.workspace), "Cohort files (cohort.yaml)")
         if path:
             self.open_cohort(path)
 
@@ -222,9 +252,8 @@ class MainWindow(ShellWindow):
         if template is not None:
             from .logic.cohort import load_cohort
             data["overrides"] = load_cohort(template).get("overrides")
-            data["overrides"].get("analysis_a", {}).pop("stats_cohort", None)
-        self.controller.create_cohort(data, COHORT_DIR)
-        self.remember(COHORT_DIR / f"{values['name']}.yaml")
+        self.controller.create_cohort(data, self.workspace)
+        self.remember(cohort_file_in(self.workspace, values["name"]))
         self.current_step = "scan"
         self.refresh()
 
@@ -330,7 +359,8 @@ class MainWindow(ShellWindow):
 
     def about(self) -> None:
         QtWidgets.QMessageBox.about(self, "About", f"<b>WFCI cohort pipeline</b> {__version__}<br>"
-                                    f"Repository: {html.escape(str(REPO_ROOT))}")
+                                    f"Program folder: {html.escape(str(REPO_ROOT))}<br>"
+                                    f"Workspace: {html.escape(str(self.workspace))}")
 
     def closeEvent(self, event):
         if self.controller.queue.busy:
@@ -349,7 +379,7 @@ class MainWindow(ShellWindow):
 
 
 class NewCohortDialog(QtWidgets.QDialog):
-    """Wizard: name, raw root, junction root, frame rate, frame order, timepoints; optionally
+    """Wizard: name, raw root, frame rate, frame order, timepoints; optionally
     the parameters of another cohort as a starting point."""
 
     def __init__(self, parent):
@@ -360,7 +390,6 @@ class NewCohortDialog(QtWidgets.QDialog):
         self.name = QtWidgets.QLineEdit()
         self.name.setPlaceholderText("e.g. cohort_a (letters, digits, _ and -)")
         self.raw_root = self._path_row(form, "Raw data folder")
-        self.link_root = self._path_row(form, "Junction view folder (optional)")
         form.insertRow(0, "Name", self.name)
         self.rate = QtWidgets.QLineEdit()
         self.rate.setPlaceholderText("per channel, e.g. 10 or 25; blank = read it in step 2")
@@ -371,7 +400,8 @@ class NewCohortDialog(QtWidgets.QDialog):
         self.timepoints = QtWidgets.QLineEdit("BL, 3D, 15D, 30D")
         form.addRow("Timepoints", self.timepoints)
         self.template = QtWidgets.QComboBox()
-        self.template.addItems(["(none)", *sorted(p.stem for p in COHORT_DIR.glob("*.yaml"))])
+        self.workspace = parent.workspace
+        self.template.addItems(["(none)", *(p.parent.name for p in cohort_files(self.workspace))])
         form.addRow("Start from the parameters of", self.template)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -393,9 +423,56 @@ class NewCohortDialog(QtWidgets.QDialog):
     def values(self):
         rate = self.rate.text().strip()
         values = dict(name=self.name.text().strip(), raw_root=self.raw_root.text().strip(),
-                      link_root=self.link_root.text().strip() or None,
                       sampling_rate_hz=float(rate) if rate else None,
                       frame_order=self.frame_order.currentText() or None,
                       timepoints=[t.strip() for t in self.timepoints.text().split(",") if t.strip()])
         template = self.template.currentText()
-        return values, (COHORT_DIR / f"{template}.yaml" if template != "(none)" else None)
+        return values, (cohort_file_in(self.workspace, template) if template != "(none)" else None)
+
+
+class WorkspaceDialog(QtWidgets.QDialog):
+    """Where the cohorts are kept: a folder outside the program folder, on an NTFS drive."""
+
+    def __init__(self, parent, current: Path, first: bool):
+        super().__init__(parent)
+        self.setWindowTitle("Workspace")
+        self.resize(640, 180)
+        layout = QtWidgets.QVBoxLayout(self)
+        text = ("Choose the folder where your cohorts are kept (one folder per cohort, with its "
+                "tables, ROI sets, pixel data and results). It must be outside the program folder "
+                "and on an NTFS drive.")
+        if first:
+            text = "Welcome. " + text + " You can change it later in Cohort ▸ Choose workspace…"
+        label = QtWidgets.QLabel(text)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        row = QtWidgets.QHBoxLayout()
+        self.edit = QtWidgets.QLineEdit(str(current))
+        browse = QtWidgets.QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        row.addWidget(self.edit, 1)
+        row.addWidget(browse)
+        layout.addLayout(row)
+        self.problem = QtWidgets.QLabel()
+        self.problem.setWordWrap(True)
+        self.problem.setStyleSheet("color: #c0392b")
+        layout.addWidget(self.problem)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _browse(self) -> None:
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Workspace", self.edit.text())
+        if folder:
+            self.edit.setText(str(Path(folder)))
+
+    def path(self) -> Path:
+        return Path(self.edit.text().strip())
+
+    def accept(self) -> None:
+        problem = workspace_problem(self.path())
+        if problem:
+            self.problem.setText(problem)
+            return
+        super().accept()

@@ -44,9 +44,10 @@ the mean of the column means; "pixel" is the plain pixel mean (folder
 `_gsr_pixelmean`). They differ because the union's columns hold different numbers
 of pixels.
 
-Exclude a recording with a field-wide reflectance glitch (a frame with dF/F ~10 in
-every pixel): one such frame is shared by every pixel and would drive every
-correlation of that recording towards 1.
+Excluded recordings are the cohort file's `exclusions:` (the QC page): a recording with a
+field-wide reflectance glitch (a frame with dF/F ~10 in every pixel) must be excluded, since
+one such frame is shared by every pixel and would drive every correlation of that
+recording towards 1.
 
 Cortex-wide GCaMP. Every recording also stores, per frame, the mean over the ROI
 union (the cortex) of the raw GCaMP F (`cortex_mean_gcamp`, counts, from
@@ -58,7 +59,8 @@ Full-frame dumps (written with no dump window) have a different Bregma per
 animal-day. Unit maps are then shifted onto one Bregma-aligned canvas before the
 group mean (translation only), and each pixel is averaged over the units covering it.
 
-Outputs (under `output_root/<volume stem>/`):
+Inputs and outputs come from the cohort file (`--cohort`): the dumps are its pixel data,
+the outputs go under `<cohort folder>/outputs/roi_pixel_connectivity/<volume stem>/`:
     <unit>/<t#>/roi_pixel_connectivity.npz  per recording: r_maps (22, rows, cols),
                                             seed_traces, R_roi, boxes, cortex_mean_gcamp,
                                             cortex_mean_signal; the resume marker
@@ -69,12 +71,12 @@ Outputs (under `output_root/<volume stem>/`):
     recording_summary.csv                   one row per recording
     cortex_mean_gcamp_traces.csv            cortex-mean GCaMP of every recording, one row per frame
 
-Examples (in the wfci_gui environment):
-    python roi_pixel_connectivity.py
-    python roi_pixel_connectivity.py --recording-limit 5
-    python roi_pixel_connectivity.py --workers 8
-    python roi_pixel_connectivity.py --volume-file pixels_median_dff_20s_full.npy
-    python roi_pixel_connectivity.py --no-plot-units
+Examples (in the wfci_gui environment; C is <cohort folder>/cohort.yaml):
+    python roi_pixel_connectivity.py --cohort C
+    python roi_pixel_connectivity.py --cohort C --recording-limit 5
+    python roi_pixel_connectivity.py --cohort C --workers 8
+    python roi_pixel_connectivity.py --cohort C --volume-file pixels_median_dff_20s_full.npy
+    python roi_pixel_connectivity.py --cohort C --no-plot-units
 
 Edit RUN_CONFIG below to run directly from the editor without CLI arguments.
 """
@@ -100,20 +102,23 @@ from matplotlib.patches import Rectangle
 
 from pixel_helpers import crop_slices, recording_roi_set, roi_output_suffix
 
-REPO_ROOT = Path(__file__).resolve().parent
+# A dump's meta names its ROI set; a relative name (the shared atlas fallback,
+# atlas/cortex22_roi_set.yaml) is relative to the code folder the extraction ran in.
+CODE_ROOT = Path(__file__).resolve().parents[1]
 
 # Edit this section to run the analysis without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    "pixel_root": REPO_ROOT / "pixel_data",  # Contains <date>_<animal>/<t#>/pixels_meta_full.npz
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort): its pixel dumps
+    # (<date>_<animal>/<t#>/pixels_meta_full.npz), its exclusions, and the output folder
+    # outputs/roi_pixel_connectivity (a subfolder per volume_file).
+    "cohort_file": None,
     "volume_file": "pixels_dff_full.npy",  # Per-pixel signal correlated; see the docstring.
-    "output_root": REPO_ROOT / "outputs/roi_pixel_connectivity",  # A subfolder per volume_file.
     # None: each dump's own ROI set. A folder: per-recording sets drawn with
     # the ROI editor (every recording must then carry the same labels, in the
     # same order, to be averaged); the output subfolder gets a _roi_<folder> suffix.
     "roi_set_dir": None,
     # Cross-check of each dump's own `group`; None skips the check.
     "groups_csv": None,
-    "exclude_recordings": [],  # "<date>_<animal>/<t#>"; see the docstring.
     "gsr": False,  # True: regress the ROI-union global signal out of every pixel first; see the docstring.
     # How the GSR global signal averages the ROI union: "column" = the reference MATLAB
     # GSR exactly (mean of column means), folder suffix _gsr; "pixel" = plain pixel mean,
@@ -264,7 +269,7 @@ def recording_boxes(meta: dict[str, Any],
     Only the dump's own set must list the dump's `roi_labels`: an override set
     may add, drop or rename boxes.
     """
-    atlas_path, atlas = recording_roi_set(meta, roi_set_dir, base_dir=REPO_ROOT)
+    atlas_path, atlas = recording_roi_set(meta, roi_set_dir, base_dir=CODE_ROOT)
     if roi_set_dir is None and list(atlas["boxes"]) != list(meta["roi_labels"]):
         raise ValueError(f"Atlas box order differs from the dump's roi_labels: {atlas_path}")
     return atlas_path, atlas["boxes"]
@@ -389,15 +394,14 @@ def gsr_suffix(gsr: bool, global_mean: str) -> str:
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pixel-root", type=Path, default=defaults["pixel_root"])
+    parser.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                        help="The cohort file, <cohort folder>/cohort.yaml")
     parser.add_argument("--volume-file", default=defaults["volume_file"])
-    parser.add_argument("--output-root", type=Path, default=defaults["output_root"])
     parser.add_argument("--groups-csv", type=lambda value: None if value.lower() == "none" else Path(value),
                         default=defaults["groups_csv"], help="'none' skips the group cross-check")
     parser.add_argument("--roi-set-dir", type=Path, default=defaults["roi_set_dir"],
                         help="Folder of per-recording ROI sets (ROI editor) used instead of "
                              "each dump's own; the output subfolder gets a _roi_<folder> suffix")
-    parser.add_argument("--exclude-recordings", nargs="*", default=defaults["exclude_recordings"])
     parser.add_argument("--gsr", action=argparse.BooleanOptionalAction, default=defaults["gsr"],
                         help="Regress the ROI-union global signal out of every pixel; output folder gets _gsr")
     parser.add_argument("--gsr-global-mean", choices=GLOBAL_MEANS, default=defaults["gsr_global_mean"],
@@ -416,8 +420,16 @@ def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(**{key: value for key, value in config.items() if key != "prefer_cli_args"})
+    # The dumps, the excluded recordings and the output folder come from the cohort file.
+    from wfci_gui.logic.cohort import load_script_cohort
+    cohort = load_script_cohort(args.cohort_file)
+    args.pixel_root = cohort.layout.pixel_data
+    args.output_root = cohort.layout.connectivity
+    args.exclude_recordings = sorted(cohort.excluded_keys())
+    return args
 
 
 def main():

@@ -48,9 +48,9 @@ each animal is rebuilt from the Bregma and Lambda held by the majority of its ow
 recordings.
 
 Run it:
-    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py
-    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --out-dir roi_sets/rebuilt
-    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --dry-run
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --cohort <cohort folder>/cohort.yaml
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --cohort <...>/cohort.yaml --dry-run
+    conda run --no-capture-output -n wfci_gui python rebuild_roi_sets.py --roi-set-dir <drawn> --out-dir <rebuilt>
 """
 from __future__ import annotations
 
@@ -84,13 +84,19 @@ from wfci import load_atlas
 # Edit this section to run the rebuild without passing CLI flags.
 # ---------------------------------------------------------------------------
 RUN_CONFIG: dict[str, Any] = {
-    # Directory holding the hand-drawn sets to rebuild.
-    "roi_set_dir": r"roi_sets",
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort). It gives the two
+    # folders below when they are None: the hand-drawn sets (roi_sets/reviewed) and
+    # where the regenerated ones go (roi_sets/rebuilt, which extract_cohort.py reads).
+    "cohort_file": None,
+    # Directory holding the hand-drawn sets to rebuild; None = the cohort's roi_sets/reviewed.
+    # The GUI and the ROI editor pass a copy of only the sessions that changed.
+    "roi_set_dir": None,
     # The constellation every set is regenerated from.
     "baseline": r"atlas/cortex22_roi_set.yaml",
-    # Where the regenerated sets are written. Same <key>.yaml names as the input, so
-    # extract_cohort.py can be pointed here with --roi-set-dir.
-    "out_dir": r"roi_sets/rebuilt",
+    # Where the regenerated sets are written (same <key>.yaml names as the input);
+    # None = the cohort's roi_sets/rebuilt. A folder of sets outside any cohort can be
+    # rebuilt by giving both folders and no cohort.
+    "out_dir": None,
     # Bregma->Lambda distance the BASELINE boxes are treated as being drawn at.
     # 55 = the ROI editor's lambda_offset, the scale reference ROI sets are built with.
     # See the module docstring before changing this.
@@ -118,6 +124,8 @@ BOX_FIELDS = ("row_start", "row_end", "col_start", "col_end")
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Rebuild ROI sets as a pure Lambda rescale of the baseline atlas.")
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file; gives --roi-set-dir and --out-dir when they are not set.")
     p.add_argument("--roi-set-dir", default=defaults["roi_set_dir"])
     p.add_argument("--baseline", default=defaults["baseline"])
     p.add_argument("--out-dir", default=defaults["out_dir"])
@@ -137,6 +145,7 @@ def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespa
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
         return parse_args(defaults=config)
     return argparse.Namespace(
+        cohort_file=config["cohort_file"],
         roi_set_dir=config["roi_set_dir"],
         baseline=config["baseline"],
         out_dir=config["out_dir"],
@@ -226,12 +235,27 @@ def bilateral_pairs(labels: list[str]) -> list[tuple[str, str, str]]:
     return pairs
 
 
+def resolve_folders(args: argparse.Namespace) -> tuple[Path, Path]:
+    """(sets to rebuild, where the rebuilt sets go): the given folders, else the cohort's
+    roi_sets/reviewed and roi_sets/rebuilt. Without both folders it needs the cohort file
+    ("set cohort_file or pass --cohort")."""
+    if args.roi_set_dir is not None and args.out_dir is not None:
+        return Path(args.roi_set_dir), Path(args.out_dir)
+    from wfci_gui.logic.cohort import load_script_cohort
+    layout = load_script_cohort(args.cohort_file).layout
+    return (Path(args.roi_set_dir) if args.roi_set_dir is not None else layout.reviewed_roi_sets,
+            Path(args.out_dir) if args.out_dir is not None else layout.rebuilt_roi_sets)
+
+
 def main() -> None:
     args = build_runtime_args()
 
-    roi_dir = Path(args.roi_set_dir)
+    roi_dir, out_dir = resolve_folders(args)
+    # A relative baseline (the default) is relative to the code folder, not to the
+    # folder the job runs in.
     baseline_path = Path(args.baseline)
-    out_dir = Path(args.out_dir)
+    if not baseline_path.is_absolute():
+        baseline_path = Path(__file__).resolve().parents[1] / baseline_path
 
     # load_atlas gives the baseline the library's own validation (field names, types,
     # the grid check) instead of trusting the YAML blindly.

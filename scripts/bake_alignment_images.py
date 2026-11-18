@@ -5,8 +5,11 @@ per session, but it runs inside the Qt startup path: serial, and only while the
 editor window is open. Decoding a cohort off a USB disk that way means staring at a
 progress dialog for an hour before the first box can be drawn.
 
-By default it writes what the new ROI editor (``python -m wfci_gui.roi_editor``) reads:
-``<roi_set_dir>/alignment_images/<key>_odd.tif`` and ``<key>_even.tif`` (float32, 128 grid,
+Everything comes from the cohort file (``--cohort``): the recordings are the cohort's
+junction view (``<cohort folder>/links``), the frames are read with its acquisition facts
+(file_glob, rot90_k, frame_order), and the previews go where the new ROI editor
+(``python -m wfci_gui.roi_editor``) reads them:
+``<cohort folder>/roi_sets/alignment_images/<key>_odd.tif`` and ``<key>_even.tif`` (float32, 128 grid,
 the mean of the first ``frames_per_parity`` odd / even frames) plus ``<key>_odd_even.json``
 recording the settings, through the editor's own writer (wfci_gui.roi_editor.sources),
 so a baked pair is exactly what the editor caches itself.
@@ -14,13 +17,12 @@ so a baked pair is exactly what the editor caches itself.
 ``preview_image`` call as ``ROIEditor.bake_all_images``). Both use write-then-rename
 ``.partial`` files; already-baked images are skipped, so it is resumable and safe to rerun.
 
-Keys are the editor's own: ``folder_key`` takes the LAST THREE path components, so the
-input folders must be laid out ``<...>/<yymmdd>/<animal>/<t#>`` -- for raw folders named
-differently that means the cohort's junction tree, not the raw paths, whose session
-folder name would otherwise land in the key.
+Keys are the editor's own: ``folder_key`` takes the LAST THREE path components, which is
+why the junction tree ``links/<yymmdd>/<animal>/<t#>`` is read, not the raw paths, whose
+session folder name would otherwise land in the key.
 
 Run:
-    conda run --no-capture-output -n wfci_gui python bake_alignment_images.py
+    conda run --no-capture-output -n wfci_gui python bake_alignment_images.py --cohort <cohort folder>/cohort.yaml
 """
 
 from __future__ import annotations
@@ -42,14 +44,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 # Edit this section to run without passing CLI flags.
 RUN_CONFIG: dict[str, Any] = {
-    # Root of the junction tree: <root>/<yymmdd>/<animal>/<t#>. Built so the editor
-    # keys read <yymmdd>_<animal>_t#. None: pass --root.
-    "root": None,
-    # Only these day folders (names under root); None = every day found.
+    # The cohort file, <cohort folder>/cohort.yaml (or pass --cohort). Recordings, frame
+    # settings and the preview folder come from it (cohort_settings).
+    "cohort_file": None,
+    # Only these day folders (names under the junction view); None = every day found.
     "days": None,
-    # Where the editor looks for previews: <roi_set_dir>/alignment_images. Must match
-    # roi_editor.RUN_CONFIG["roi_set_dir"], or the editor re-decodes everything.
-    "roi_set_dir": r"roi_sets/reviewed",
     # The odd / even pair (new editor): frames of each parity averaged. Must match the
     # editor's "frames per parity" (default 10), or the editor treats the pair as stale.
     "frames_per_parity": 10,
@@ -57,14 +56,6 @@ RUN_CONFIG: dict[str, Any] = {
     "legacy_preview": False,
     "channel_order": "auto",
     "preview_frames": 1,
-    # Image glob and quarter turns per frame: part of the pair's sidecar, so they must match
-    # the editor's settings (cohort file) too.
-    "pattern": "*.tif",
-    "rot90_k": 0,
-    # How acquisition order is read off the file names (wfci.io.sorted_frame_files).
-    # "number" when frame numbers are not zero-padded (..._1.tif ... ..._6000.tif);
-    # "name" when they are. Must match the cohort file's acquisition.frame_order.
-    "frame_order": "number",
     # 8 leaves headroom on this 20-core machine; each worker holds one frame plus the
     # two downsamples, so memory is not the limit -- the USB disk is.
     "workers": 8,
@@ -95,7 +86,8 @@ def pair_settings(args):
     """The editor settings the odd / even pair is written with (its sidecar)."""
     from wfci_gui.roi_editor.logic import EditorSettings
     return EditorSettings(pattern=args.pattern, frame_order=args.frame_order, rot90_k=int(args.rot90_k),
-                          roi_set_dir=str(args.roi_set_dir), frames_per_parity=int(args.frames_per_parity))
+                          roi_set_dir=str(args.roi_set_dir), image_dir=str(args.image_dir),
+                          frames_per_parity=int(args.frames_per_parity))
 
 
 def is_baked(key: str, image_dir: Path, args) -> bool:
@@ -137,50 +129,57 @@ def bake_one(job: tuple[str, str, str, int, str]) -> tuple[str, float, bool]:
 
 def parse_args(defaults: dict[str, Any]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--root", default=defaults["root"],
-                   help="Root of the <yymmdd>/<animal>/<t#> tree.")
+    p.add_argument("--cohort", dest="cohort_file", default=defaults["cohort_file"],
+                   help="The cohort file, <cohort folder>/cohort.yaml.")
     p.add_argument("--days", nargs="*", default=defaults["days"],
                    help="Only these day folders (default: all).")
-    p.add_argument("--roi-set-dir", default=defaults["roi_set_dir"],
-                   help="Previews go to <roi-set-dir>/alignment_images.")
     p.add_argument("--frames-per-parity", type=int, default=defaults["frames_per_parity"],
                    help="Odd / even frames averaged into the pair (the editor's setting).")
     p.add_argument("--legacy-preview", action="store_true", default=defaults["legacy_preview"],
                    help="Write the old editor's single <key>.tif instead of the odd / even pair.")
-    p.add_argument("--pattern", default=defaults["pattern"])
-    p.add_argument("--rot90-k", dest="rot90_k", type=int, default=defaults["rot90_k"])
     p.add_argument("--channel-order", default=defaults["channel_order"])
     p.add_argument("--preview-frames", type=int, default=defaults["preview_frames"])
-    p.add_argument("--frame-order", choices=["name", "number"], default=defaults["frame_order"])
     p.add_argument("--workers", type=int, default=defaults["workers"])
     p.add_argument("--dry-run", action="store_true", default=defaults["dry_run"])
     return p.parse_args()
 
 
+def cohort_settings(cohort_file: str | None) -> dict[str, Any]:
+    """Folders and frame settings from the cohort file (raises without one)."""
+    from wfci_gui.logic.cohort import acquisition_value, load_script_cohort
+    cohort = load_script_cohort(cohort_file)
+    layout = cohort.layout
+    return dict(root=str(layout.links), roi_set_dir=str(layout.reviewed_roi_sets),
+                image_dir=str(layout.alignment_images),
+                pattern=acquisition_value(cohort, "file_glob"),
+                rot90_k=int(acquisition_value(cohort, "rot90_k")),
+                frame_order=acquisition_value(cohort, "frame_order"))
+
+
 def build_runtime_args(config: dict[str, Any] | None = None) -> argparse.Namespace:
     config = dict(RUN_CONFIG if config is None else config)
     if bool(config.get("prefer_cli_args", True)) and len(sys.argv) > 1:
-        return parse_args(defaults=config)
-    return argparse.Namespace(
-        root=config["root"],
-        days=config["days"],
-        roi_set_dir=config["roi_set_dir"],
-        frames_per_parity=config["frames_per_parity"],
-        legacy_preview=bool(config["legacy_preview"]),
-        pattern=config["pattern"],
-        rot90_k=config["rot90_k"],
-        channel_order=config["channel_order"],
-        preview_frames=config["preview_frames"],
-        frame_order=config["frame_order"],
-        workers=config["workers"],
-        dry_run=config["dry_run"],
-    )
+        args = parse_args(defaults=config)
+    else:
+        args = argparse.Namespace(
+            cohort_file=config["cohort_file"],
+            days=config["days"],
+            frames_per_parity=config["frames_per_parity"],
+            legacy_preview=bool(config["legacy_preview"]),
+            channel_order=config["channel_order"],
+            preview_frames=config["preview_frames"],
+            workers=config["workers"],
+            dry_run=config["dry_run"],
+        )
+    for name, value in cohort_settings(args.cohort_file).items():
+        setattr(args, name, value)
+    return args
 
 
 def main() -> None:
     args = build_runtime_args()
     root = Path(args.root)
-    image_dir = Path(args.roi_set_dir) / "alignment_images"
+    image_dir = Path(args.image_dir)
     image_dir.mkdir(parents=True, exist_ok=True)
 
     folders = find_recordings(root, args.days)

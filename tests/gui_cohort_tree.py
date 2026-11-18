@@ -1,8 +1,11 @@
-"""A small fake cohort on disk for the wfci_gui tests.
+"""A small fake cohort on disk for the wfci_gui tests, in the per-cohort workspace layout.
 
 raw/SESSION_A/{m1_a,m2_a}/{t1,t2}  and  raw/SESSION_B/{m1_b,m2_b}/{t1,t2}: 6 tiny TIFFs
 each, numbered 1..6, the bright (reflectance) image second in every pair. ``m1_a`` and
 ``m1_b`` are aliases of one animal, M1 (and likewise M2).
+
+The cohort is ``workspace/fake/cohort.yaml`` with ``tables/`` beside it; every other
+location (manifest, links, ROI sets, pixel data, outputs) follows from that folder.
 """
 
 from __future__ import annotations
@@ -33,38 +36,34 @@ def write_raw(root: Path, n_files: int = 6) -> None:
                     tifffile.imwrite(target / f"frame_{i}.tif", np.full((8, 8), level, np.uint16))
 
 
-def make_cohort(tmp_path: Path, link_root: bool = False) -> Path:
-    """Write the cohort file and tables; return the cohort file path."""
+def make_cohort(tmp_path: Path, **changes) -> Path:
+    """Write ``tmp_path/workspace/fake/cohort.yaml`` and its tables; return the cohort file.
+
+    ``changes`` replace top-level keys of the cohort file (e.g. ``pixel_root=...``).
+    """
     raw = tmp_path / "raw"
     write_raw(raw)
-    cohorts = tmp_path / "cohorts"
-    (cohorts / "fake").mkdir(parents=True)
+    folder = tmp_path / "workspace" / "fake"
+    tables = folder / "tables"
+    tables.mkdir(parents=True)
     data = {
         "name": "fake",
         "raw_root": str(raw),
-        "pixel_root": str(tmp_path / "pixel"),
-        "output_root": str(tmp_path / "out"),
-        "manifest": str(tmp_path / "manifests" / "fake_manifest.csv"),
-        "manifest_paths": "link" if link_root else "raw",
-        "roi_set_dir": str(tmp_path / "roi" / "rebuilt"),
-        "reviewed_roi_set_dir": str(tmp_path / "roi" / "reviewed"),
         "timepoints": ["BL", "3D"],
         "acquisition": {"sampling_rate_hz": 25, "frame_order": "number", "trim_s": 2.0, "rot90_k": 0,
                         "grid": [128, 128], "file_glob": "*.tif", "expected_files": 6, "confirmed": True},
-        "tables": {k: f"fake/{k}.csv" for k in ("sessions", "animals", "recordings")},
         "exclusions": [],
         "exclusions_confirmed": False,
         "overrides": {},
+        **changes,
     }
-    if link_root:
-        data["link_root"] = str(tmp_path / "links")
-    path = cohorts / "fake.yaml"
+    path = folder / "cohort.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     pd.DataFrame([dict(session_folder=s, day=d, timepoint=t, day_zero="false", include="true")
-                  for s, (d, t) in SESSIONS.items()]).to_csv(cohorts / "fake" / "sessions.csv", index=False)
+                  for s, (d, t) in SESSIONS.items()]).to_csv(tables / "sessions.csv", index=False)
     pd.DataFrame([dict(raw_name=f, animal=a, group="P", mouse_line="line_a", include="true")
-                  for f, a in ANIMAL_FOLDERS.items()]).to_csv(cohorts / "fake" / "animals.csv", index=False)
-    (cohorts / "fake" / "recordings.csv").write_text(
+                  for f, a in ANIMAL_FOLDERS.items()]).to_csv(tables / "animals.csv", index=False)
+    (tables / "recordings.csv").write_text(
         "day,animal,recording,path,n_files,status,use,channel_order\n", encoding="utf-8")
     return path
 

@@ -14,7 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 import pandas as pd
+import yaml
 
 from .cohort import Cohort, acquisition_missing, parse_bool, recording_key, used_recordings
 from .manifest import manifest_matches
@@ -107,7 +109,7 @@ most analyses. The frame rate from step 2 is passed automatically; with the wron
 it only if QC showed one, and only for an additive change.</p>"""),
     StepDef("design", "7", "Design and groups", ("scan", "qc"), """
 <h3>7 · Experimental design</h3>
-<p>Writes <code>experimental_design.csv</code>: for every recording that is not excluded, its
+<p>Writes the cohort's <code>design.csv</code>: for every recording that is not excluded, its
 animal, group, mouse line, timepoint and session number. Groups and mouse lines come from the
 animals table, timepoints from the sessions table.</p>
 <p>Adding a session later changes every later session number of that animal: rerun the
@@ -138,7 +140,7 @@ def _mtime(path: Path) -> float:
 
 
 def read_batch_summary(cohort: Cohort) -> pd.DataFrame:
-    path = cohort.path_of("output_root") / "batch_summary.csv"
+    path = cohort.layout.batch_summary
     if not path.exists():
         return pd.DataFrame(columns=["day", "animal", "recording", "status"])
     frame = pd.read_csv(path, dtype=str, keep_default_na=False)
@@ -155,8 +157,8 @@ def summary_status_by_key(summary: pd.DataFrame) -> dict[str, str]:
 def recording_dirs(cohort: Cohort, key: str) -> tuple[Path, Path]:
     """(outputs dir, pixel dir) of a recording key ``<day>_<animal>/<t#>``."""
     unit, recording = key.split("/")
-    return (cohort.path_of("output_root") / unit / recording,
-            cohort.path_of("pixel_root") / unit / recording)
+    return (cohort.layout.outputs / unit / recording,
+            cohort.layout.pixel_data / unit / recording)
 
 
 def cache_windows(cohort: Cohort) -> list[float]:
@@ -176,15 +178,15 @@ def chosen_variants(cohort: Cohort) -> list[str]:
 
 
 def design_path(cohort: Cohort) -> Path:
-    return cohort.path_of("design_csv")
+    return cohort.layout.design_csv
 
 
 def roi_preflight_path(cohort: Cohort) -> Path:
-    return cohort.path_of("output_root") / "roi_preflight.csv"
+    return cohort.layout.outputs / "roi_preflight.csv"
 
 
 def qc_table_path(cohort: Cohort) -> Path:
-    return cohort.path_of("output_root") / "qc_table.csv"
+    return cohort.layout.outputs / "qc_table.csv"
 
 
 def setup_check_path(config_dir: Path) -> Path:
@@ -248,8 +250,8 @@ def status_rois(cohort: Cohort, tables) -> StepStatus:
     if used.empty:
         return StepStatus(False, "no recordings to place ROIs on (scan first)")
     names = [f"{r.day}_{r.animal}_{r.recording}.yaml" for r in used.itertuples()]
-    reviewed_dir = cohort.path_of("reviewed_roi_set_dir")
-    rebuilt_dir = cohort.path_of("roi_set_dir")
+    reviewed_dir = cohort.layout.reviewed_roi_sets
+    rebuilt_dir = cohort.layout.rebuilt_roi_sets
     drawn = sum((reviewed_dir / n).exists() for n in names)
     rebuilt_paths = [rebuilt_dir / n for n in names]
     rebuilt = sum(p.exists() for p in rebuilt_paths)
@@ -269,34 +271,74 @@ def status_rois(cohort: Cohort, tables) -> StepStatus:
     return StepStatus(rebuilt == total and passed == total, detail, warnings, counts)
 
 
+# The two values a ROI set's channel_order may hold (channel_rectangle.CHOSEN_ORDERS).
+CHOSEN_ORDERS = ("gcamp_first", "emo_first")
+
+
+def chosen_channel_order(cohort: Cohort, key: str) -> str | None:
+    """The channel order chosen in the ROI editor for a recording key (``channel_order``
+    of the ROI set the extraction resolves for it), None when none was chosen."""
+    unit, recording = key.split("/")
+    for name in (f"{unit}_{recording}.yaml", f"{unit}.yaml"):
+        path = cohort.layout.rebuilt_roi_sets / name
+        if path.is_file():
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            value = data.get("channel_order") if isinstance(data, dict) else None
+            if value is not None and value not in CHOSEN_ORDERS:
+                raise ValueError(f"{path}: channel_order must be one of {CHOSEN_ORDERS}, got {value!r}")
+            return value
+    return None
+
+
+def extracted_channel_order(npz_path: Path) -> str:
+    """The channel order a recording's outputs were extracted with ("" when not recorded)."""
+    with np.load(npz_path, allow_pickle=False) as result:
+        return str(result["channel_order"].item()) if "channel_order" in result.files else ""
+
+
 def status_extract(cohort: Cohort, tables) -> StepStatus:
     used = used_recordings(tables)
     if used.empty:
         return StepStatus(False, "no recordings")
     by_key = summary_status_by_key(read_batch_summary(cohort))
     done = needs_decision = missing_row = 0
-    stale = []
+    stale, order_changed = [], []
     for key in used["key"]:
         output_dir, pixel_dir = recording_dirs(cohort, key)
-        npz = (output_dir / "connectivity_full.npz").exists()
+        npz_path = output_dir / "connectivity_full.npz"
+        npz = npz_path.exists()
         status = by_key.get(key)
         if status is None:
             missing_row += 1
             continue
+        chosen = chosen_channel_order(cohort, key)
         if status == "needs_channel_decision":
+            if chosen is not None:
+                order_changed.append(key)     # decided in the ROI editor: extract again
+                continue
             needs_decision += 1
             if npz:
                 stale.append(key)
         elif npz:
-            done += 1
+            if chosen is not None and extracted_channel_order(npz_path) != chosen:
+                order_changed.append(key)
+            else:
+                done += 1
     total = len(used)
     warnings = []
     if stale:
         warnings.append(f"{len(stale)} recording(s) marked 'needs a channel decision' still have "
                         f"outputs from an earlier run (stale): {', '.join(stale[:6])}"
                         f"{' ...' if len(stale) > 6 else ''}")
-    counts = dict(total=total, done=done, needs_decision=needs_decision, missing=missing_row)
+    if order_changed:
+        warnings.append(f"{len(order_changed)} recording(s) have a channel order chosen in the ROI "
+                        f"editor that their outputs were not extracted with (stale; run step 4 "
+                        f"again): {', '.join(order_changed[:6])}{' ...' if len(order_changed) > 6 else ''}")
+    counts = dict(total=total, done=done, needs_decision=needs_decision, missing=missing_row,
+                  order_changed=len(order_changed))
     detail = f"{done} of {total} extracted, {needs_decision} need a channel decision"
+    if order_changed:
+        detail += f", {len(order_changed)} stale (channel order changed)"
     return StepStatus(done + needs_decision == total, detail, warnings, counts)
 
 
@@ -305,7 +347,7 @@ def status_qc(cohort: Cohort, tables) -> StepStatus:
     excluded = len(cohort.exclusions)
     if not table.exists():
         return StepStatus(False, "QC table not built yet")
-    batch = cohort.path_of("output_root") / "batch_summary.csv"
+    batch = cohort.layout.batch_summary
     warnings = []
     if batch.exists() and _mtime(table) < _mtime(batch):
         warnings.append("the batch ran again after the QC table was built: rebuild it")
@@ -382,19 +424,19 @@ def variant_volume(variant: str) -> str:
 def stale_connectivity(cohort: Cohort, variant: str) -> tuple[int, int, list[str]]:
     """(results, stale results, examples) of one variant: a per-recording result is stale
     when its input volume was rewritten after it, or no longer exists."""
-    folder = cohort.path_of("connectivity_root") / variant
+    folder = cohort.layout.connectivity / variant
     results = sorted(folder.glob("*/*/roi_pixel_connectivity.npz"))
     stale = []
     for result in results:
         unit, recording = result.parent.parent.name, result.parent.name
-        source = cohort.path_of("pixel_root") / unit / recording / variant_volume(variant)
+        source = cohort.layout.pixel_data / unit / recording / variant_volume(variant)
         if not source.exists() or _mtime(result) < _mtime(source):
             stale.append(f"{unit}/{recording}")
     return len(results), len(stale), stale
 
 
 def status_analysis_a(cohort: Cohort, tables) -> StepStatus:
-    root = cohort.path_of("connectivity_root")
+    root = cohort.layout.connectivity
     variants = chosen_variants(cohort)
     present = [v for v in variants if (root / v).is_dir()]
     warnings = []
@@ -441,9 +483,9 @@ def quick_checks(cohort: Cohort | None, conda_path: Path | None, env_path: Path 
         dict(name="env exists", ok=bool(env_path and env_path.is_dir()), detail=str(env_path or "")),
     ]
     if cohort is not None:
-        raw = Path(cohort.get("raw_root"))
+        raw = cohort.raw_root
         checks.append(dict(name="raw drive mounted", ok=raw.exists(), detail=str(raw)))
-        pixel_root = cohort.path_of("pixel_root")
+        pixel_root = cohort.layout.pixel_data
         free = free_gb(pixel_root)
         needed = needed_dump_gb(n_recordings, len(cache_windows(cohort)) + 1)
         checks.append(dict(

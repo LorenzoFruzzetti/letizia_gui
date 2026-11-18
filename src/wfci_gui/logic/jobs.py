@@ -1,7 +1,7 @@
 """Job queue model and job history. No Qt: the controller runs them.
 
 One job runs at a time; the rest wait in order. Every finished job appends one JSON line
-to ``<output_root>/gui_jobs.jsonl``: step, command, overrides, start, end, exit code, log.
+to ``<cohort folder>/outputs/gui_jobs.jsonl``: step, command, overrides, start, end, exit code, log.
 """
 
 from __future__ import annotations
