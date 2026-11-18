@@ -465,7 +465,7 @@ def test_cached_previews_stand_in_for_an_unmounted_raw_drive(tmp_path, monkeypat
     monkeypatch.setattr(sources, "cohort_recordings", lambda cohort: rows)
     settings = logic.EditorSettings(folder=(str(tmp_path / "not_mounted"),), roi_set_dir=str(reviewed),
                                     roi_seed_dir=None)
-    pages, _args, _profile, preview_only, _notes = sources.pages_from_folders(settings, "cohorts/fake.yaml")
+    pages, _args, _profile, preview_only, _notes = sources.pages_from_folders(settings, "workspace/fake/cohort.yaml")
     assert preview_only and [p.key for p in pages] == ["210101_M1_t2", "210104_M1_t1"]
     sources.load_images(pages[0], settings)
     assert pages[0].image.shape == GRID and pages[0].image_source == "legacy"

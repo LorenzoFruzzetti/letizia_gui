@@ -26,8 +26,8 @@ from .logic.cohort import (
     newer_app_version, pending_diff, save_cohort, used_recordings, validate_cohort, validate_tables, write_table,
 )
 from .logic.conda import (
-    CondaNotFound, conda_candidates, display_command, env_prefix, job_environment,
-    powershell_command, python_command,
+    INSTALL_HINT, CondaNotFound, conda_candidates, display_command, env_prefix, installed_conda,
+    job_environment, powershell_command, python_command,
 )
 from .logic.jobs import Job, JobQueue, append_history, log_file_name, read_history
 from .logic.layout import cohort_file_in
@@ -79,11 +79,15 @@ class Controller(QtCore.QObject):
 
     @staticmethod
     def _find_conda(environ) -> Path | None:
+        """The installer's conda (install.json); the usual places only as a fallback."""
+        recorded = installed_conda(environ)
+        if recorded is not None:
+            return recorded
         return next((c for c in conda_candidates(environ) if c.is_file()), None)
 
     def conda(self) -> Path:
         if self.state.conda is None:
-            raise CondaNotFound("conda was not found: install it, then run setup_env.ps1 by hand")
+            raise CondaNotFound(f"conda was not found. {INSTALL_HINT}")
         return self.state.conda
 
     # ----- cohort -------------------------------------------------------------------
@@ -265,7 +269,8 @@ class Controller(QtCore.QObject):
 
     def repair_job(self) -> Job:
         return self._plain_job("setup", "repair", "Repair environment (setup_env.ps1)",
-                               powershell_command(self.repo / "env" / "setup_env.ps1",["-SkipTests"]))
+                               powershell_command(self.repo / "env" / "setup_env.ps1",
+                                                  ["-Mode", "Repair", "-Conda", str(self.conda())]))
 
     def example_cohort_job(self, workspace: Path) -> tuple[Job, Path]:
         """Write the synthetic example cohort into the workspace (``example``, or

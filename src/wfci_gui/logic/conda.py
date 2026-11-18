@@ -4,12 +4,17 @@ Every job is ``conda.bat run --no-capture-output -n wfci_gui python -u <script> 
   * through ``conda run``, because calling the env's python.exe directly crashes numpy's
     BLAS;
   * with ``--no-capture-output``, because otherwise errors are hidden;
-  * with ``PYTHONPATH=<repo>\\src;<repo>\\scripts``, because the env's editable install may point at
-    another checkout.
+  * with ``PYTHONPATH=<code folder>\\src;<code folder>\\scripts``: the env holds third-party
+    packages only, and this folder's code comes from the folder itself.
+
+Which conda: the one Install.bat recorded in ``%APPDATA%\\wfci_gui\\install.json``. The
+search of the usual places is only a fallback for when that file is missing or names a
+conda that is gone; the GUI then tells the user to run Install.bat.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -24,12 +29,29 @@ class CondaNotFound(FileNotFoundError):
     pass
 
 
+INSTALL_HINT = "Run Install.bat in the program folder to install or repair it."
+
+
+def install_record_path(environ: dict[str, str] | None = None) -> Path:
+    """``%APPDATA%\\wfci_gui\\install.json``, written by the installer."""
+    environ = dict(os.environ if environ is None else environ)
+    return Path(environ.get("APPDATA") or str(Path.home() / ".config")) / "wfci_gui" / "install.json"
+
+
+def installed_conda(environ: dict[str, str] | None = None) -> Path | None:
+    """The conda the installer recorded, or None when there is no record or it is gone."""
+    path = install_record_path(environ)
+    if not path.is_file():
+        return None
+    conda = Path(json.loads(path.read_text(encoding="utf-8"))["conda"])
+    return conda if conda.is_file() else None
+
+
 def conda_candidates(environ: dict[str, str] | None = None) -> list[Path]:
-    """Where conda is looked for, in order."""
+    """Where conda is looked for when the installer left no record, in order."""
     environ = dict(os.environ if environ is None else environ)
     home = Path(environ.get("USERPROFILE", str(Path.home())))
-    candidates = [home / "anaconda3" / "condabin" / "conda.bat",
-                  home / "miniconda3" / "condabin" / "conda.bat"]
+    candidates = [home / name / "condabin" / "conda.bat" for name in ("anaconda3", "miniconda3", "miniforge3")]
     if environ.get("CONDA_EXE"):
         exe = Path(environ["CONDA_EXE"])
         # CONDA_EXE is ...\Scripts\conda.exe; prefer the condabin\conda.bat next to it.
@@ -38,12 +60,15 @@ def conda_candidates(environ: dict[str, str] | None = None) -> list[Path]:
 
 
 def find_conda(environ: dict[str, str] | None = None) -> Path:
+    """The installer's conda, else the first one found in the usual places."""
+    recorded = installed_conda(environ)
+    if recorded is not None:
+        return recorded
     for candidate in conda_candidates(environ):
         if candidate.is_file():
             return candidate
     tried = "\n  ".join(str(c) for c in conda_candidates(environ))
-    raise CondaNotFound(f"conda was not found. Tried:\n  {tried}\n"
-                        "Install Anaconda/Miniconda or set CONDA_EXE.")
+    raise CondaNotFound(f"conda was not found. Tried:\n  {tried}\n{INSTALL_HINT}")
 
 
 def conda_root(conda: Path) -> Path:

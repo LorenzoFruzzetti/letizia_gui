@@ -1,9 +1,10 @@
 """Entry point: ``python -m wfci_gui [<workspace>/<cohort>/cohort.yaml]``.
 
-Run it through conda, from the repository root:
+Start.bat starts it (no console window). By hand, from PowerShell in the code folder:
 
     $env:PYTHONPATH = "$PWD\\src;$PWD\\scripts"
-    & "$env:USERPROFILE\\anaconda3\\condabin\\conda.bat" run --no-capture-output -n wfci_gui python -m wfci_gui
+    $env:PYTHONPYCACHEPREFIX = "$env:LOCALAPPDATA\\wfci_gui\\pycache"
+    & <conda.bat from %APPDATA%\\wfci_gui\\install.json> run --no-capture-output -n wfci_gui python -m wfci_gui
 
 Errors are not caught inside the GUI: ``sys.excepthook`` shows the traceback in a dialog
 and appends it to ``<settings folder>/wfci_gui.log`` (GUI_DESIGN_GUIDELINES.md 6.4).

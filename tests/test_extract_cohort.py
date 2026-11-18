@@ -341,7 +341,7 @@ def test_save_data_dtypes_and_root_are_settable_without_editing_code(monkeypatch
 
 
 def test_save_data_root_mirrors_the_output_tree(tmp_path):
-    """Volumes land under save_data_root at the same <day>_<animal>\<t#> tail.
+    r"""Volumes land under save_data_root at the same <day>_<animal>\<t#> tail.
 
     That is what lets tens of GB of pixels sit on a different disk from the small
     analysis outputs while staying matched up recording by recording.

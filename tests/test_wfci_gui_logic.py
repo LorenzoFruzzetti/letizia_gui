@@ -177,8 +177,8 @@ def _fake_conda(home: Path, folder: str) -> Path:
 
 
 def test_conda_discovery_order(tmp_path):
-    environ = {"USERPROFILE": str(tmp_path)}
-    with pytest.raises(CondaNotFound):
+    environ = {"USERPROFILE": str(tmp_path), "APPDATA": str(tmp_path / "appdata")}
+    with pytest.raises(CondaNotFound, match="Install.bat"):
         find_conda(environ)
     exe_conda = _fake_conda(tmp_path / "custom", "conda")
     environ["CONDA_EXE"] = str(exe_conda.parent.parent / "Scripts" / "conda.exe")
@@ -187,6 +187,21 @@ def test_conda_discovery_order(tmp_path):
     assert find_conda(environ) == miniconda
     anaconda = _fake_conda(tmp_path, "anaconda3")
     assert find_conda(environ) == anaconda
+
+
+def test_the_installers_conda_comes_first(tmp_path):
+    import json
+    from wfci_gui.logic.conda import install_record_path, installed_conda
+    environ = {"USERPROFILE": str(tmp_path), "APPDATA": str(tmp_path / "appdata")}
+    anaconda = _fake_conda(tmp_path, "anaconda3")
+    chosen = _fake_conda(tmp_path / "elsewhere", "miniforge3")
+    record = install_record_path(environ)
+    assert record == tmp_path / "appdata" / "wfci_gui" / "install.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"conda": str(chosen), "env_name": "wfci_gui"}), encoding="utf-8")
+    assert installed_conda(environ) == chosen and find_conda(environ) == chosen
+    chosen.unlink()                                       # that conda is gone: fall back
+    assert installed_conda(environ) is None and find_conda(environ) == anaconda
 
 
 def test_command_building():

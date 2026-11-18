@@ -1,0 +1,100 @@
+{
+    // Launch configurations for a developer. Every one runs with this folder's src and
+    // scripts on PYTHONPATH, writes bytecode to %LOCALAPPDATA%\wfci_gui\pycache and runs
+    // in the user's home folder, so nothing is written inside the code folder.
+    // The interpreter is the wfci_gui conda env (settings.json); the Python extension
+    // activates it, which numpy's BLAS needs.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "WFCI Cohort (GUI)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "wfci_gui",
+            "cwd": "${userHome}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "ROI editor (empty)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "wfci_gui.roi_editor",
+            "cwd": "${userHome}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "ROI editor (a cohort)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "wfci_gui.roi_editor",
+            "args": ["--cohort", "${input:cohortFile}"],
+            "cwd": "${userHome}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Current script on a cohort",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "args": ["--cohort", "${input:cohortFile}"],
+            "cwd": "${userHome}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache",
+                "MPLBACKEND": "Agg"
+            },
+            "justMyCode": false
+        },
+        {
+            "name": "Create example cohort",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/make_example_cohort.py",
+            "args": ["--workspace", "${input:workspace}"],
+            "cwd": "${userHome}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache"
+            }
+        },
+        {
+            "name": "Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-q"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src;${workspaceFolder}/scripts",
+                "PYTHONPYCACHEPREFIX": "${env:LOCALAPPDATA}/wfci_gui/pycache"
+            },
+            "justMyCode": false
+        }
+    ],
+    "inputs": [
+        {
+            "id": "cohortFile",
+            "type": "promptString",
+            "description": "Cohort file: <workspace>\\<cohort>\\cohort.yaml",
+            "default": "${userHome}\\Documents\\WFCI\\example\\cohort.yaml"
+        },
+        {
+            "id": "workspace",
+            "type": "promptString",
+            "description": "Workspace folder",
+            "default": "${userHome}\\Documents\\WFCI"
+        }
+    ]
+}

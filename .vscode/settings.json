@@ -1,0 +1,10 @@
+{
+    // The wfci_gui conda env that Install.bat builds. If conda is not in anaconda3, pick
+    // the env with "Python: Select Interpreter" (the path is in %APPDATA%\wfci_gui\install.json).
+    "python.defaultInterpreterPath": "${env:USERPROFILE}\\anaconda3\\envs\\wfci_gui\\python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": ["-q"],
+    "python.analysis.extraPaths": ["src", "scripts"],
+    "files.exclude": {"**/__pycache__": true}
+}

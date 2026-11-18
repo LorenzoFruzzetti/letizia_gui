@@ -1,0 +1,44 @@
+{
+  "env_name": "wfci_gui",
+  "channel": "conda-forge",
+  "stages": [
+    {
+      "name": "Python",
+      "installer": "create",
+      "packages": [
+        {"import": "sys", "dist": "", "version": "3.11.16", "spec": "python=3.11.16"}
+      ]
+    },
+    {
+      "name": "Scientific packages",
+      "installer": "conda",
+      "packages": [
+        {"import": "numpy", "dist": "numpy", "version": "2.4.6", "spec": "numpy=2.4.6"},
+        {"import": "scipy", "dist": "scipy", "version": "1.17.1", "spec": "scipy=1.17.1"},
+        {"import": "pandas", "dist": "pandas", "version": "3.0.5", "spec": "pandas=3.0.5"},
+        {"import": "tifffile", "dist": "tifffile", "version": "2026.3.3", "spec": "tifffile=2026.3.3"},
+        {"import": "matplotlib", "dist": "matplotlib", "version": "3.11.1", "spec": "matplotlib-base=3.11.1"},
+        {"import": "yaml", "dist": "pyyaml", "version": "6.0.3", "spec": "pyyaml=6.0.3"},
+        {"import": "pytest", "dist": "pytest", "version": "9.1.1", "spec": "pytest=9.1.1"},
+        {"import": "pip", "dist": "pip", "version": "26.2.1", "spec": "pip=26.2.1"}
+      ]
+    },
+    {
+      "name": "GUI packages",
+      "installer": "conda",
+      "packages": [
+        {"import": "pyqtgraph", "dist": "pyqtgraph", "version": "0.14.0", "spec": "pyqtgraph=0.14.0"},
+        {"import": "PySide6", "dist": "pyside6", "version": "6.11.2", "spec": "pyside6=6.11.2"},
+        {"import": "pytestqt", "dist": "pytest-qt", "version": "4.5.0", "spec": "pytest-qt=4.5.0"}
+      ]
+    },
+    {
+      "name": "Statistics packages",
+      "installer": "pip",
+      "packages": [
+        {"import": "statsmodels", "dist": "statsmodels", "version": "0.15.0", "spec": "statsmodels==0.15.0"},
+        {"import": "psutil", "dist": "psutil", "version": "7.2.2", "spec": "psutil==7.2.2"}
+      ]
+    }
+  ]
+}

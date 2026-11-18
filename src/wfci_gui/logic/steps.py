@@ -56,9 +56,8 @@ STEPS: tuple[StepDef, ...] = (
 environment exists with every package, the analysis library is loaded from <i>this</i>
 folder, the tests pass, the raw-data disk is plugged in and the dump disk has enough space.</p>
 <p><b>Run checks</b> tests the environment (a minute; add the test suite for a few more).
-<b>Repair</b> runs <code>setup_env.ps1</code>, which installs only what is missing.</p>
-<p>The very first install must be done by hand: open PowerShell in
-the repository folder and run <code>.\\env\\setup_env.ps1</code>.</p>"""),
+<b>Repair</b> installs only what is missing, as Install.bat's "Repair" does.</p>
+<p>The first install is <b>Install.bat</b> in the program folder (double-click it).</p>"""),
     StepDef("scan", "1", "Scan raw folders", ("setup",), """
 <h3>1 · Scan the raw folders</h3>
 <p>Lists every recording folder of the cohort, checks it is complete, and writes the

@@ -56,12 +56,31 @@ def check_wfci_checkout() -> dict:
     ok = result.returncode == 0 and Path(location).resolve().parent == expected.resolve()
     detail = location if ok else (
         f"wfci is loaded from {location or '(import failed)'}, not {expected} "
-        "(an editable install may point at another checkout): run setup_env.ps1 or set PYTHONPATH")
+        "(another copy is installed in the env): start the program with Start.bat, which sets PYTHONPATH")
     return dict(name="wfci from this checkout", ok=ok, detail=detail)
 
 
+def check_pins() -> dict:
+    """Every package at the version env\\packages.json pins (Install.bat > Repair fixes it)."""
+    import importlib.metadata
+    pins = json.loads((REPO_ROOT / "env" / "packages.json").read_text(encoding="utf-8"))
+    # Stripped: some conda packages' metadata versions end in a space.
+    have = {d.metadata["Name"].lower().replace("_", "-"): d.version.strip()
+            for d in importlib.metadata.distributions()}
+    wanted = [p for stage in pins["stages"] for p in stage["packages"] if p["dist"]]
+    wrong = [f"{p['dist']} {have.get(p['dist'], 'missing')} (pinned {p['version']})"
+             for p in wanted if have.get(p["dist"]) != p["version"]]
+    python_pin = pins["stages"][0]["packages"][0]["version"]     # stage 1 is Python itself
+    python_version = sys.version.split()[0]
+    if python_version != python_pin:
+        wrong.append(f"python {python_version} (pinned {python_pin})")
+    return dict(name="versions as pinned in env/packages.json", ok=not wrong,
+                detail="; ".join(wrong) if wrong else f"{len(wanted) + 1} packages")
+
+
 def check_tests() -> dict:
-    result = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+    # pytest.ini names the test folders and turns the cache off.
+    result = subprocess.run([sys.executable, "-m", "pytest", "-q"],
                             capture_output=True, text=True, cwd=REPO_ROOT)
     last = (result.stdout.strip().splitlines() or ["no output"])[-1]
     return dict(name="tests pass", ok=result.returncode == 0, detail=last)
@@ -74,6 +93,7 @@ def main() -> None:
     args = parser.parse_args()
     checks = [dict(name="python", ok=sys.version_info[:2] >= (3, 10), detail=sys.version.split()[0])]
     checks += check_packages()
+    checks.append(check_pins())
     checks.append(check_wfci_checkout())
     if args.tests:
         print("running the test suite ...", flush=True)

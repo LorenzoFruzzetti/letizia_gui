@@ -202,12 +202,12 @@ def test_importing_roi_editor_does_not_pull_in_qt():
     import subprocess
 
     code = (
-        "import sys; sys.path.insert(0, r'%s');"
+        "import sys; sys.path[:0] = [r'%s', r'%s'];"
         "import roi_editor;"
         "gui = sorted({m.split('.')[0] for m in sys.modules"
         " if m.split('.')[0] in ('PySide6','PySide2','PyQt5','PyQt6','pyqtgraph')});"
         "print(','.join(gui));"
-        "assert callable(roi_editor.load_roi_set)" % SCRIPTS
+        "assert callable(roi_editor.load_roi_set)" % (SCRIPTS, REPO_ROOT / "src")
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          check=True)
