@@ -19,10 +19,11 @@ import pandas as pd
 
 from qtkit.qt import QtCore
 
+from . import APP_VERSION
 from .logic import REPO_ROOT
 from .logic.cohort import (
     TABLE_KINDS, Cohort, dump_cohort, import_table, load_cohort, load_tables, new_cohort_data,
-    pending_diff, save_cohort, used_recordings, validate_cohort, validate_tables, write_table,
+    newer_app_version, pending_diff, save_cohort, used_recordings, validate_cohort, validate_tables, write_table,
 )
 from .logic.conda import (
     CondaNotFound, conda_candidates, display_command, env_prefix, job_environment,
@@ -69,6 +70,7 @@ class Controller(QtCore.QObject):
         self.state = AppState()
         self.queue = JobQueue()
         self.process: QtCore.QProcess | None = None
+        self._example_path: Path | None = None     # the example cohort being written
         self.log_handle = None
         self._partial = ""
         self.state.conda = self._find_conda(environ)
@@ -87,6 +89,10 @@ class Controller(QtCore.QObject):
     # ----- cohort -------------------------------------------------------------------
     def open_cohort(self, path: str | Path) -> None:
         cohort = load_cohort(path)
+        newer = newer_app_version(cohort)
+        if newer is not None:
+            raise ValueError(f"{cohort.path} was saved by version {newer} of this program, which is newer "
+                             f"than this one ({APP_VERSION}). Install the newer version to open it.")
         self.state.cohort = cohort
         self.state.saved_text = dump_cohort(cohort.data)
         self.state.tables = load_tables(cohort)
@@ -261,6 +267,20 @@ class Controller(QtCore.QObject):
         return self._plain_job("setup", "repair", "Repair environment (setup_env.ps1)",
                                powershell_command(self.repo / "env" / "setup_env.ps1",["-SkipTests"]))
 
+    def example_cohort_job(self, workspace: Path) -> tuple[Job, Path]:
+        """Write the synthetic example cohort into the workspace (``example``, or
+        ``example_2``... when taken); it opens when the job ends."""
+        name, number = "example", 1
+        while (Path(workspace) / name).exists():
+            number += 1
+            name = f"example_{number}"
+        path = cohort_file_in(workspace, name)
+        job = self._plain_job("setup", EXAMPLE_COHORT_KEY, f"Create example cohort ({name})", python_command(
+            self.conda(), [str(self.repo / "scripts" / "make_example_cohort.py"),
+                           "--workspace", str(workspace), "--name", name]))
+        self._example_path = path
+        return job, path
+
     def new_roi_editor_job(self) -> Job:
         """Step 3 with the new editor (python -m wfci_gui.roi_editor), settings from the cohort file."""
         cohort = self._require_cohort()
@@ -391,7 +411,13 @@ class Controller(QtCore.QObject):
         self._start_next()
 
     def _after(self, job: Job) -> None:
-        """Step 3: when the ROI editor closes, rebuild this cohort's new sets, then pre-flight."""
+        """The example cohort opens once written. Step 3: when the ROI editor closes,
+        rebuild this cohort's new sets, then pre-flight."""
+        if job.key == EXAMPLE_COHORT_KEY and job.exit_code == 0 and self._example_path is not None:
+            path, self._example_path = self._example_path, None
+            self.log_line.emit(f"[gui] example cohort written: opening {path}")
+            self.open_cohort(path)
+            return
         if job.key != NEW_ROI_EDITOR_KEY or job.exit_code != 0 \
                 or self.state.cohort is None:
             return
@@ -420,6 +446,8 @@ class Controller(QtCore.QObject):
         return JOBS[job]
 
 
+# Job key of the example-cohort generator; the cohort opens when it ends.
+EXAMPLE_COHORT_KEY = "example_cohort"
 # Job key of the ROI editor; when it closes, step 3 rebuilds and pre-flights.
 NEW_ROI_EDITOR_KEY = "roi_editor_new"
 

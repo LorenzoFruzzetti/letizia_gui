@@ -482,6 +482,7 @@ def test_every_gui_job_passes_the_cohort_file_not_paths(tmp_path):
     path = make_cohort(tmp_path, overrides={"analysis_a": {"animals": ["M1", "M2"], "baseline": "BL"}})
     cohort = load_cohort(path)
     tables = load_tables(cohort)
+    cohort.layout.design_csv.write_text("day,animal,recording,timepoint\n", encoding="utf-8")  # step 7 ran
     for job in ("scan", "facts", "bake", "preflight", "extract", "qc", "cache_median", "cache_blpedestal",
                 "design", "connectivity", "stats"):
         built = build_arguments(job, cohort, tables)

@@ -24,6 +24,7 @@ ACTIONS = (
     ActionSpec("cohort.new", "New cohort…", "Ctrl+N", "new_cohort", "SP_FileIcon"),
     ActionSpec("cohort.open", "Open cohort…", "Ctrl+O", "open_cohort_dialog", "SP_DirOpenIcon"),
     ActionSpec("cohort.workspace", "Choose workspace…", "", "choose_workspace", "SP_DirHomeIcon"),
+    ActionSpec("cohort.example", "Create example cohort", "", "create_example_cohort", "SP_FileDialogNewFolder"),
     ActionSpec("cohort.save", "Save cohort", "Ctrl+S", "save_cohort", "SP_DialogSaveButton"),
     ActionSpec("cohort.revert", "Revert unsaved changes", "", "revert_cohort", "SP_DialogResetButton"),
     ActionSpec("cohort.export", "Export all parameters…", "", "export_parameters", "SP_ArrowUp"),
@@ -43,7 +44,7 @@ ACTIONS = (
 DEFAULT_LAYOUT = {
     "menus": {
         "File": ["cohort.save", "cohort.revert", "-", "cohort.export", "cohort.import", "-", "app.quit"],
-        "Cohort": ["cohort.new", "cohort.open", "-", "cohort.workspace"],
+        "Cohort": ["cohort.new", "cohort.open", "-", "cohort.example", "-", "cohort.workspace"],
         "Run": ["run.step", "run.stop", "-", "run.refresh", "run.open_folder"],
         "Help": ["app.shortcuts", "app.toolbar", "app.reset_commands", "-", "app.open_config", "app.about"],
     },
@@ -256,6 +257,15 @@ class MainWindow(ShellWindow):
         self.remember(cohort_file_in(self.workspace, values["name"]))
         self.current_step = "scan"
         self.refresh()
+
+    def create_example_cohort(self) -> None:
+        """Queue the example-cohort generator; the cohort opens when it is written."""
+        if not self.maybe_save():
+            return
+        job, path = self.controller.example_cohort_job(self.workspace)
+        self.controller.enqueue(job)
+        self.remember(path)
+        self.notify(f"Writing the example cohort to {path.parent} (about a minute); it opens when done.")
 
     def save_cohort(self) -> bool:
         """Show the diff against the file on disk, then save."""

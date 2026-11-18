@@ -285,6 +285,17 @@ def p_with_stars(p_value):
     return text + stars
 
 
+def friedman_pvalue(table):
+    """Friedman test across the timepoints (columns) of an animals x timepoints table.
+
+    It needs at least three timepoints; with two it is NaN (the paired t-test is the
+    test of a single later timepoint against the baseline).
+    """
+    if table.shape[1] < 3:
+        return float("nan")
+    return stats.friedmanchisquare(*table.T).pvalue
+
+
 def paired_tests(table):
     """{contrast: (mean difference, t, p)} of a paired t-test across animals; table is (n_animals, n_days, ...)."""
     results = {}
@@ -328,7 +339,7 @@ for metric in metric_masks:
     table = session_values.pivot(index="animal", columns="day_index", values=metric).loc[animals, days].to_numpy()
     paired = paired_tests(table)
     mixed, omnibus_p = mixed_model_tests(metric)
-    friedman_p = stats.friedmanchisquare(*table.T).pvalue
+    friedman_p = friedman_pvalue(table)
     for contrast in contrasts:
         metric_rows.append({
             "metric": metric, "contrast": contrast,
@@ -670,7 +681,7 @@ for metric in focus_metric_masks:
     table = focus_session_values.pivot(index="animal", columns="day_index", values=metric).loc[animals, days].to_numpy()
     paired = paired_tests(table)
     mixed, omnibus_p = mixed_model_tests(metric)
-    friedman_p = stats.friedmanchisquare(*table.T).pvalue
+    friedman_p = friedman_pvalue(table)
     for contrast in contrasts:
         focus_rows.append({
             "metric": metric, "contrast": contrast, "n_edges": int(focus_metric_masks[metric].sum()),
@@ -987,7 +998,7 @@ for group_name, subsets in group_edges.items():
                  .loc[animals, days].to_numpy())
         paired = paired_tests(table)
         mixed, omnibus_p = mixed_model_tests(column)
-        friedman_p = stats.friedmanchisquare(*table.T).pvalue
+        friedman_p = friedman_pvalue(table)
         # Display value in r: mean r over the subset's edges, minus day 1, per animal.
         change_r_subset = change_r[:, :, ssp_index, motor_index].mean(axis=2)   # (n_animals, n_days)
         for contrast in contrasts:
@@ -1124,7 +1135,7 @@ if focus_prefix == "motor":
                          .loc[animals, days].to_numpy())
                 paired = paired_tests(table)
                 mixed, omnibus_p = mixed_model_tests(column)
-                friedman_p = stats.friedmanchisquare(*table.T).pvalue
+                friedman_p = friedman_pvalue(table)
                 # Display value in r: mean r over the subset's edges, minus the baseline, per animal.
                 change_r_subset = change_r[:, :, partner_index, motor_index].mean(axis=2)   # (n_animals, n_days)
                 for contrast in contrasts:

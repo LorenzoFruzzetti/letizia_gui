@@ -157,3 +157,25 @@ def test_workspace_is_kept_in_the_user_settings(window, tmp_path):
     assert cohort_file_in(window.workspace, "fake") == path.resolve()
     with pytest.raises(ValueError, match="inside the program folder"):
         window.set_workspace(Path(__file__).resolve().parents[1] / "workspace")
+
+
+def test_create_example_cohort_queues_the_generator_into_the_workspace(window, tmp_path):
+    window.set_workspace(tmp_path / "ws")
+    window.controller.state.conda = tmp_path / "anaconda3" / "condabin" / "conda.bat"
+    (tmp_path / "ws" / "example").mkdir()                      # taken: the next name is used
+    job, path = window.controller.example_cohort_job(window.workspace)
+    assert path == window.workspace / "example_2" / "cohort.yaml"
+    assert job.command[-5:] == [str(window.controller.repo / "scripts" / "make_example_cohort.py"),
+                                "--workspace", str(window.workspace), "--name", "example_2"]
+    assert "cohort.example" in window.registry.actions
+
+
+def test_a_cohort_saved_by_a_newer_version_is_refused(window, tmp_path):
+    import yaml
+    path = make_cohort(tmp_path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["app_version"] = "999.0.0"
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="newer"):
+        window.controller.open_cohort(path)
+    assert window.controller.state.cohort is None

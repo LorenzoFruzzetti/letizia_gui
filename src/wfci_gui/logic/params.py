@@ -90,6 +90,14 @@ def _needs_acquisition(cohort: Cohort, *keys: str) -> dict[str, Any]:
     return values
 
 
+def _blpedestal_fixed(cohort: Cohort, tables, variant) -> dict[str, Any]:
+    """The BL-pedestal cache reads the baseline sessions from design.csv (step 7)."""
+    values = _needs_acquisition(cohort, "sampling_rate_hz")
+    if not cohort.layout.design_csv.exists():
+        values["design.csv"] = not_set("design.csv, run step 7 (Experimental design) first")
+    return values
+
+
 def _connectivity_fixed(cohort: Cohort, tables, variant) -> dict[str, Any]:
     variant = variant or chosen_variants(cohort)[0]  # the form shows the first variant
     gsr = variant.endswith("_gsr")
@@ -137,7 +145,7 @@ JOBS: dict[str, JobSpec] = {spec.key: spec for spec in (
             fixed=lambda c, t, v: {**_needs_acquisition(c, "sampling_rate_hz"),
                                    "window_s": float(v) if v is not None else cache_windows(c)[0]}),
     JobSpec("cache_blpedestal", "caches", "BL-pedestal cache", "cache_median_dff_baseline_pedestal.py",
-            fixed=lambda c, t, v: _needs_acquisition(c, "sampling_rate_hz")),
+            fixed=_blpedestal_fixed),
     JobSpec("design", "design", "Experimental design", "build_cohort_design.py", fixed=_cohort_arg),
     JobSpec("connectivity", "analysis_a", "Connectivity", "roi_pixel_connectivity.py",
             fixed=_connectivity_fixed),

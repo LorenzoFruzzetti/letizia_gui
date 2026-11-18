@@ -17,6 +17,7 @@ worth having. So the tests split into three groups:
 
 from __future__ import annotations
 
+import gc
 import os
 import sys
 import tracemalloc
@@ -189,11 +190,20 @@ def test_dump_peak_memory_does_not_grow_with_recording_length(tmp_path):
     dwarfs a toy volume), so the assertion is on the SHAPE of the curve: peak
     memory is compared between a short and a long run. Buffering would make the
     peak scale with length; streaming keeps it flat.
+
+    Independent of the tests before it: one unmeasured warm-up run takes the one-time
+    allocations (lazy imports, caches), and a collection before each measured run
+    clears the cyclic garbage earlier code left, which tracemalloc would otherwise count
+    at whatever point the collector happened to be.
     """
+    g, e = _write_trial(tmp_path, 50)
+    stream_trial_roi(tiff_frame_source(g), tiff_frame_source(e), _cfg(), trim=TRIM, downsample=DS,
+                     pixel_dump=PixelDump(tmp_path / "warm_up", "test", n_time=50 - TRIM, downsample=DS))
     peaks = {}
     for n in (50, 400):
         g, e = _write_trial(tmp_path, n)
         dump = PixelDump(tmp_path / f"out{n}", "test", n_time=n - TRIM, downsample=DS)
+        gc.collect()
         tracemalloc.start()
         stream_trial_roi(tiff_frame_source(g), tiff_frame_source(e), _cfg(),
                          trim=TRIM, downsample=DS, pixel_dump=dump)
